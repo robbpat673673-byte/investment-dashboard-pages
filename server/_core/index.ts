@@ -8,6 +8,11 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { sdk } from "./sdk";
+import { appSettings } from "../../drizzle/schema";
+import { getDb } from "../db";
+import { refreshDashboardData } from "../services/dashboardRefresh";
+import { eq } from "drizzle-orm";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -36,6 +41,22 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  app.post("/api/scheduled/daily-refresh", async (req, res) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "cron-only" });
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "database-unavailable" });
+      const setting = (await db.select().from(appSettings).where(eq(appSettings.settingKey, "daily-data-refresh")).limit(1))[0];
+      if (!setting || setting.scheduleCronTaskUid !== user.taskUid) return res.status(403).json({ error: "unknown-cron" });
+      const result = await refreshDashboardData();
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown-error";
+      console.error("[daily-refresh]", error);
+      return res.status(500).json({ error: message, timestamp: new Date().toISOString() });
+    }
+  });
   // tRPC API
   app.use(
     "/api/trpc",
