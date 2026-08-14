@@ -11,6 +11,12 @@ const tabs: Array<{ key: TabKey; label: string }> = [
   { key: "news", label: "財經即時新聞" },
 ];
 
+function initialTabFromUrl(): TabKey {
+  if (typeof window === "undefined") return "asia";
+  const requested = new URLSearchParams(window.location.search).get("tab");
+  return tabs.some(tab => tab.key === requested) ? requested as TabKey : "asia";
+}
+
 const periodLabels = [
   ["week", "一週"],
   ["month", "一月"],
@@ -139,7 +145,7 @@ function MarketCards({ market }: { market: Array<{ ticker: string; name: string;
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<TabKey>("asia");
+  const [activeTab, setActiveTab] = useState<TabKey>(initialTabFromUrl);
   const [now, setNow] = useState(() => new Date());
   const { data, isLoading, isFetching, refetch } = trpc.dashboard.get.useQuery(undefined, { refetchInterval: 60_000 });
 
