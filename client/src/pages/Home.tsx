@@ -30,6 +30,12 @@ function formatDate(value: Date | string | null | undefined) {
   return Number.isNaN(parsed.getTime()) ? "--" : new Intl.DateTimeFormat("zh-TW", { timeZone: "Asia/Taipei", month: "2-digit", day: "2-digit" }).format(parsed);
 }
 
+function formatChartDate(value: Date | string | null | undefined) {
+  if (!value) return "--";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "--" : new Intl.DateTimeFormat("zh-TW", { timeZone: "Asia/Taipei", year: "2-digit", month: "2-digit" }).format(parsed);
+}
+
 function formatDateTime(value: Date | string | null | undefined) {
   if (!value) return "等待首次更新";
   const parsed = new Date(value);
@@ -48,12 +54,53 @@ function returnText(value: number | null | undefined) {
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
-function FundCard({ fund }: { fund: { name: string; code: string | null; currency: string; nav: number | null; asOfDate: Date | string | null; perf: Record<(typeof periodLabels)[number][0], number | null> } }) {
+type FundCardData = {
+  name: string;
+  code: string | null;
+  currency: string;
+  nav: number | null;
+  asOfDate: Date | string | null;
+  history: Array<{ date: string; nav: number }>;
+  annualRank: number | null;
+  annualTotal: number;
+  perf: Record<(typeof periodLabels)[number][0], number | null>;
+};
+
+function Sparkline({ history, annualReturn }: { history: FundCardData["history"]; annualReturn: number | null }) {
+  if (history.length < 2) return <div className="sparkline-empty">一年期淨值資料不足</div>;
+  const values = history.map(point => point.nav);
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  const range = maximum - minimum || 1;
+  const points = history.map((point, index) => {
+    const x = (index / (history.length - 1)) * 100;
+    const y = 92 - ((point.nav - minimum) / range) * 78;
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  }).join(" ");
+  const area = `0,100 ${points} 100,100`;
+  const trendClass = valueClass(annualReturn);
+  return (
+    <div className="sparkline-wrap" aria-label={`${formatChartDate(history[0]?.date)} 至 ${formatChartDate(history.at(-1)?.date)} 的一年期淨值走勢`}>
+      <div className="sparkline-head"><span>近一年淨值走勢</span><span>{formatChartDate(history[0]?.date)} — {formatChartDate(history.at(-1)?.date)}</span></div>
+      <svg className={`sparkline ${trendClass}`} viewBox="0 0 100 100" preserveAspectRatio="none" role="img">
+        <line x1="0" x2="100" y1="50" y2="50" className="sparkline-guide" />
+        <polygon points={area} className="sparkline-area" />
+        <polyline points={points} className="sparkline-line" vectorEffect="non-scaling-stroke" />
+        <circle cx="100" cy={points.split(" ").at(-1)?.split(",")[1] ?? "50"} r="2.3" className="sparkline-dot" vectorEffect="non-scaling-stroke" />
+      </svg>
+    </div>
+  );
+}
+
+function FundCard({ fund }: { fund: FundCardData }) {
+  const annualReturn = fund.perf.year;
+  const rankWidth = fund.annualRank && fund.annualTotal > 1 ? Math.max(8, ((fund.annualTotal - fund.annualRank) / (fund.annualTotal - 1)) * 100) : 50;
   return (
     <article className="fund-card">
       <div className="fc-code">{fund.code || `境外 · ${fund.currency}`}</div>
       <div className="fc-name">{fund.name}</div>
       <div className="fc-price">{fund.currency === "TWD" ? "" : `${fund.currency} `}{formatNumber(fund.nav, fund.currency === "TWD" ? 2 : 4)}</div>
+      <Sparkline history={fund.history} annualReturn={annualReturn} />
       <div className="fc-returns" aria-label={`${fund.name} 多期間報酬`}>
         {periodLabels.map(([key, label]) => (
           <div className="fc-period" key={key}>
@@ -61,6 +108,11 @@ function FundCard({ fund }: { fund: { name: string; code: string | null; currenc
             <span className={`fc-period-value ${valueClass(fund.perf[key])}`}>{returnText(fund.perf[key])}</span>
           </div>
         ))}
+      </div>
+      <div className="annual-performance">
+        <div className="annual-performance-head"><span>年度績效比較</span><strong className={valueClass(annualReturn)}>{returnText(annualReturn)}</strong></div>
+        <div className="annual-meter" aria-label={`一年報酬率排名 ${fund.annualRank ?? "--"} / ${fund.annualTotal || "--"}`}><span className={`annual-meter-fill ${valueClass(annualReturn)}`} style={{ width: `${rankWidth}%` }} /></div>
+        <div className="annual-performance-foot"><span>一年報酬率</span><span>{fund.annualRank ? `第 ${fund.annualRank} / ${fund.annualTotal} 名` : "排名資料不足"}</span></div>
       </div>
       <div className="fc-ts">淨值日期：{formatDate(fund.asOfDate)}</div>
     </article>
@@ -158,7 +210,7 @@ export default function Home() {
 
         {activeTab === "foreign" && <section className="panel active"><div className="sec-title">國際基金 — 最新淨值與多期間報酬</div><p className="fund-hint">報酬率以基金原幣淨值計算；尚未取得的期間顯示「--」。</p><div className="fund-grid">{(data?.foreignFunds ?? []).map(fund => <FundCard key={fund.id} fund={fund} />)}</div></section>}
 
-        {activeTab === "performance" && <section className="panel active"><MarketCards market={data?.market ?? []} /><div className="sec-title">一週漲跌幅排行</div><div className="table-wrap"><table className="dtable"><thead><tr><th>代碼</th><th className="left">名稱</th><th>淨值</th><th>日期</th><th>一週漲跌幅</th></tr></thead><tbody>{weeklyRanking.map(fund => <tr key={fund.id}><td><span className="t-code">{fund.code || "境外"}</span></td><td className="left"><span className="t-name">{fund.name}</span></td><td><span className="t-price">{fund.currency === "TWD" ? "" : `${fund.currency} `}{formatNumber(fund.nav, fund.currency === "TWD" ? 2 : 4)}</span></td><td className="t-ts">{formatDate(fund.asOfDate)}</td><td><span className={`badge badge-${valueClass(fund.perf.week)}`}>{returnText(fund.perf.week)}</span></td></tr>)}</tbody></table></div></section>}
+        {activeTab === "performance" && <section className="panel active"><MarketCards market={data?.market ?? []} /><div className="sec-title">一週與一年漲跌幅排行</div><div className="table-wrap"><table className="dtable"><thead><tr><th>代碼</th><th className="left">名稱</th><th>淨值</th><th>日期</th><th>一週漲跌幅</th><th>一年漲跌幅</th><th>年度排名</th></tr></thead><tbody>{weeklyRanking.map(fund => <tr key={fund.id}><td><span className="t-code">{fund.code || "境外"}</span></td><td className="left"><span className="t-name">{fund.name}</span></td><td><span className="t-price">{fund.currency === "TWD" ? "" : `${fund.currency} `}{formatNumber(fund.nav, fund.currency === "TWD" ? 2 : 4)}</span></td><td className="t-ts">{formatDate(fund.asOfDate)}</td><td><span className={`badge badge-${valueClass(fund.perf.week)}`}>{returnText(fund.perf.week)}</span></td><td><span className={`badge badge-${valueClass(fund.perf.year)}`}>{returnText(fund.perf.year)}</span></td><td className="t-ts">{fund.annualRank ? `${fund.annualRank} / ${fund.annualTotal}` : "--"}</td></tr>)}</tbody></table></div></section>}
 
         {activeTab === "news" && <section className="panel active"><div className="sec-title">財經即時新聞</div><div className="news-list">{(data?.news ?? []).length === 0 ? <div className="empty-inline">等待每日 RSS 更新。</div> : (data?.news ?? []).map(item => <article className="news-item" key={item.id}><a className="news-title" href={item.url} target="_blank" rel="noreferrer">{item.title}</a>{item.summary ? <p className="news-body">{item.summary}</p> : null}<div className="news-meta"><span>{formatDateTime(item.publishedAt)}</span><span>{item.source}</span></div></article>)}</div></section>}
       </main>

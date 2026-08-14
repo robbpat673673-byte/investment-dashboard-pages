@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculatePerformances, cleanText, parseHistoryPayload, safeUrl } from "./services/dashboardCalculations";
+import { calculatePerformances, cleanText, parseHistoryPayload, safeUrl, sampleHistory } from "./services/dashboardCalculations";
 
 describe("基金歷史淨值與新聞資料處理", () => {
   it("解析 MoneyDJ 圖表日期與淨值序列", () => {
@@ -25,5 +25,15 @@ describe("基金歷史淨值與新聞資料處理", () => {
     expect(cleanText("<![CDATA[<b>財經</b>&nbsp;新聞]]>")).toBe("財經 新聞");
     expect(safeUrl("https://example.com/news")).toBe("https://example.com/news");
     expect(safeUrl("javascript:alert(1)")).toBe("");
+  });
+
+  it("以真實首尾資料等距抽樣一年期淨值圖表", () => {
+    const history = Array.from({ length: 10 }, (_, index) => ({ date: `2025-01-${String(index + 1).padStart(2, "0")}`, nav: index + 10 }));
+    expect(sampleHistory(history, 4)).toEqual([
+      { date: "2025-01-01", nav: 10 },
+      { date: "2025-01-04", nav: 13 },
+      { date: "2025-01-07", nav: 16 },
+      { date: "2025-01-10", nav: 19 },
+    ]);
   });
 });

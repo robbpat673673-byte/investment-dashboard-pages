@@ -9,7 +9,7 @@ import {
   newsItems,
   refreshRuns,
 } from "../../drizzle/schema";
-import { calculatePerformances, cleanText, parseHistoryPayload, safeUrl, type NavPoint } from "./dashboardCalculations";
+import { calculatePerformances, cleanText, parseHistoryPayload, safeUrl, sampleHistory, shiftMonths, type NavPoint } from "./dashboardCalculations";
 
 type FundConfig = {
   fundType: "domestic" | "foreign";
@@ -262,8 +262,23 @@ export async function getPublicDashboardData() {
   const allFunds = await db.select().from(funds).where(eq(funds.isActive, true)).orderBy(funds.fundType, funds.sortOrder);
   const performanceRows = await db.select().from(fundPerformances);
   const performanceByFundId = new Map(performanceRows.map(item => [item.fundId, item]));
+  const navRows = await db.select({ fundId: fundNavHistory.fundId, navDate: fundNavHistory.navDate, nav: fundNavHistory.nav }).from(fundNavHistory).orderBy(fundNavHistory.fundId, fundNavHistory.navDate);
+  const historyByFundId = new Map<number, NavPoint[]>();
+  for (const row of navRows) {
+    const date = row.navDate instanceof Date ? row.navDate.toISOString().slice(0, 10) : String(row.navDate).slice(0, 10);
+    const current = historyByFundId.get(row.fundId) ?? [];
+    current.push({ date, nav: Number(row.nav) });
+    historyByFundId.set(row.fundId, current);
+  }
+  const rankedByYear = allFunds
+    .filter(fund => performanceByFundId.get(fund.id)?.year !== null && performanceByFundId.get(fund.id)?.year !== undefined)
+    .sort((left, right) => Number(performanceByFundId.get(right.id)?.year) - Number(performanceByFundId.get(left.id)?.year));
+  const annualRankByFundId = new Map(rankedByYear.map((fund, index) => [fund.id, index + 1]));
   const toFund = (fund: typeof allFunds[number]) => {
     const performance = performanceByFundId.get(fund.id);
+    const rawHistory = historyByFundId.get(fund.id) ?? [];
+    const latestHistoryDate = rawHistory.at(-1)?.date;
+    const chartHistory = latestHistoryDate ? rawHistory.filter(point => point.date >= shiftMonths(latestHistoryDate, 12)) : [];
     return {
       id: fund.id,
       name: fund.name,
@@ -271,6 +286,9 @@ export async function getPublicDashboardData() {
       currency: fund.currency,
       nav: performance ? decimal(performance.latestNav) : null,
       asOfDate: performance?.asOfDate ?? null,
+      history: sampleHistory(chartHistory),
+      annualRank: annualRankByFundId.get(fund.id) ?? null,
+      annualTotal: rankedByYear.length,
       perf: {
         week: performance ? decimal(performance.week) : null,
         month: performance ? decimal(performance.month) : null,

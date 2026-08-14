@@ -68,6 +68,18 @@ export function calculatePerformances(history: NavPoint[]): PerformanceValues {
   return result;
 }
 
+/** 保留首尾並等距抽樣，讓圖表使用真實淨值但避免傳輸過多逐日資料。 */
+export function sampleHistory(history: NavPoint[], maxPoints = 80): NavPoint[] {
+  if (history.length <= maxPoints) return history;
+  const sampled: NavPoint[] = [];
+  for (let index = 0; index < maxPoints; index += 1) {
+    const sourceIndex = Math.round((index * (history.length - 1)) / (maxPoints - 1));
+    const point = history[sourceIndex];
+    if (point && sampled.at(-1)?.date !== point.date) sampled.push(point);
+  }
+  return sampled;
+}
+
 export function cleanText(value: string, limit = 180): string {
   const decoded = value
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
