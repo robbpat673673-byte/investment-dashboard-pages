@@ -25,3 +25,7 @@
 ## 375px 正式公開網址實測（待修正）
 
 正式公開網址於 375px 裝置模擬下可確認深色按鈕、五個頁籤與主內容寬度均位於 375px 視窗內，`scrollWidth` 為 375。切換後 `localStorage` 已寫入 `investment-dashboard-theme=dark`，按鈕也改為「淺色」；但重新載入後，按鈕保有「淺色」狀態而頁面根節點尚未恢復 `dark` 類別，造成視覺配色仍為淺色。此不一致已列為回歸修正項，不能視為行動版持久化驗證完成。
+
+## 375px 正式公開網址回歸驗證（已修正）
+
+已確認根層 `ThemeProvider` 在不可切換模式下仍會覆寫 `html.dark`，因此改為僅在 Context 主題切換啟用時才修改文件根節點；同時在 React 掛載前同步 `investment-dashboard-theme` 偏好。最新公開資產於全新 375px Chromium 工作階段的量測結果如下：切換前為 `dark=false`、`storedTheme=null`、按鈕「深色」；切換後為 `dark=true`、`storedTheme=dark`、按鈕「淺色」；重新載入後仍為 `dark=true`、`storedTheme=dark`、按鈕「淺色」。五個頁籤皆可識別，且 `window.innerWidth` 與 `document.documentElement.scrollWidth` 均為 375，未產生橫向溢出。最終截圖亦確認全頁深色配色已正確呈現。
