@@ -10,6 +10,7 @@ import {
   refreshRuns,
 } from "../../drizzle/schema";
 import { calculatePerformances, cleanText, parseHistoryPayload, safeUrl, sampleHistory, shiftMonths, type NavPoint } from "./dashboardCalculations";
+import { buildPublicFundDetail } from "./fundDetail";
 
 type FundConfig = {
   fundType: "domestic" | "foreign";
@@ -350,27 +351,15 @@ export async function getPublicFundDetail(fundId: number) {
     date: row.navDate instanceof Date ? row.navDate.toISOString().slice(0, 10) : String(row.navDate).slice(0, 10),
     nav: Number(row.nav),
   }));
-  const latestHistory = history.at(-1) ?? null;
-  const sourceEndpoint = fund.fundType === "foreign"
-    ? "https://fund.hncb.com.tw/w/bcd/BCDNavList.djbcd"
-    : "https://fund.hncb.com.tw/w/bcd/tBCDNavList.djbcd";
-
-  return {
+  return buildPublicFundDetail({
     id: fund.id,
     name: fund.name,
     code: fund.displayCode,
     fundType: fund.fundType,
     currency: fund.currency,
-    nav: performance ? decimal(performance.latestNav) : latestHistory?.nav ?? null,
-    asOfDate: performance?.asOfDate ?? latestHistory?.date ?? null,
+    latestNav: performance ? decimal(performance.latestNav) : null,
+    asOfDate: performance?.asOfDate ?? null,
     history,
-    perf: calculatePerformances(history),
-    source: {
-      name: "MoneyDJ／合庫基金圖表資料",
-      detail: fund.fundType === "foreign" ? "合庫基金境外基金圖表端點" : "合庫基金國內基金圖表端點",
-      url: "https://fund.hncb.com.tw/",
-      endpoint: sourceEndpoint,
-      lastSyncedAt: navRows.at(-1)?.sourcedAt ?? null,
-    },
-  };
+    lastSyncedAt: navRows.at(-1)?.sourcedAt ?? null,
+  });
 }
