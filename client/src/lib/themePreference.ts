@@ -13,3 +13,11 @@ export function toggleThemePreference(value: ThemePreference): ThemePreference {
 export function applyThemePreference(value: ThemePreference) {
   if (typeof document !== "undefined") document.documentElement.classList.toggle("dark", value === "dark");
 }
+
+/** 在 React 掛載前同步已保存的偏好，避免重載時按鈕狀態與頁面配色不同步。 */
+export function restoreThemePreference(): ThemePreference {
+  if (typeof window === "undefined") return "light";
+  const theme = parseThemePreference(window.localStorage.getItem(THEME_PREFERENCE_STORAGE_KEY));
+  applyThemePreference(theme);
+  return theme;
+}
