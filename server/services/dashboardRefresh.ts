@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import {
   fundNavHistory,
@@ -295,6 +295,7 @@ export async function getPublicDashboardData() {
       id: fund.id,
       name: fund.name,
       code: fund.displayCode,
+      fundType: fund.fundType,
       currency: fund.currency,
       nav: performance ? decimal(performance.latestNav) : null,
       asOfDate: performance?.asOfDate ?? null,
@@ -328,5 +329,48 @@ export async function getPublicDashboardData() {
     })),
     news: news.map(item => ({ ...item, id: Number(item.id) })),
     lastRefresh: latestRun ? { status: latestRun.status, startedAt: latestRun.startedAt, finishedAt: latestRun.finishedAt, fundsUpdated: latestRun.fundsUpdated, newsUpdated: latestRun.newsUpdated } : null,
+  };
+}
+
+/** 回傳單檔基金公開詳細資料；歷史淨值保留完整資料以供詳細頁檢視。 */
+export async function getPublicFundDetail(fundId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("資料庫尚未連線");
+
+  const fund = (await db.select().from(funds).where(and(eq(funds.id, fundId), eq(funds.isActive, true))).limit(1))[0];
+  if (!fund) return null;
+
+  const performance = (await db.select().from(fundPerformances).where(eq(fundPerformances.fundId, fund.id)).limit(1))[0] ?? null;
+  const navRows = await db
+    .select({ navDate: fundNavHistory.navDate, nav: fundNavHistory.nav, sourcedAt: fundNavHistory.sourcedAt })
+    .from(fundNavHistory)
+    .where(eq(fundNavHistory.fundId, fund.id))
+    .orderBy(fundNavHistory.navDate);
+  const history = navRows.map(row => ({
+    date: row.navDate instanceof Date ? row.navDate.toISOString().slice(0, 10) : String(row.navDate).slice(0, 10),
+    nav: Number(row.nav),
+  }));
+  const latestHistory = history.at(-1) ?? null;
+  const sourceEndpoint = fund.fundType === "foreign"
+    ? "https://fund.hncb.com.tw/w/bcd/BCDNavList.djbcd"
+    : "https://fund.hncb.com.tw/w/bcd/tBCDNavList.djbcd";
+
+  return {
+    id: fund.id,
+    name: fund.name,
+    code: fund.displayCode,
+    fundType: fund.fundType,
+    currency: fund.currency,
+    nav: performance ? decimal(performance.latestNav) : latestHistory?.nav ?? null,
+    asOfDate: performance?.asOfDate ?? latestHistory?.date ?? null,
+    history,
+    perf: calculatePerformances(history),
+    source: {
+      name: "MoneyDJ／合庫基金圖表資料",
+      detail: fund.fundType === "foreign" ? "合庫基金境外基金圖表端點" : "合庫基金國內基金圖表端點",
+      url: "https://fund.hncb.com.tw/",
+      endpoint: sourceEndpoint,
+      lastSyncedAt: navRows.at(-1)?.sourcedAt ?? null,
+    },
   };
 }

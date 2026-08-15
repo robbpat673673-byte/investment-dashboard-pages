@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { filterFunds, type FundScope } from "@/lib/fundFilters";
 import { moveMarketCard, orderMarketCards } from "@/lib/marketCardOrder";
 import { useEffect, useMemo, useState } from "react";
 
@@ -62,8 +63,10 @@ function returnText(value: number | null | undefined) {
 }
 
 type FundCardData = {
+  id: number;
   name: string;
   code: string | null;
+  fundType: "domestic" | "foreign";
   currency: string;
   nav: number | null;
   asOfDate: Date | string | null;
@@ -132,8 +135,33 @@ function FundCard({ fund }: { fund: FundCardData }) {
         <div className="annual-performance-foot"><span>一年報酬率</span><span>{fund.annualRank ? `第 ${fund.annualRank} / ${fund.annualTotal} 名` : "排名資料不足"}</span></div>
       </div>
       <div className="fc-ts">淨值日期：{formatDate(fund.asOfDate)}</div>
+      <a className="fund-detail-link" href={`/fund/${fund.id}`}>查看完整資料 <span aria-hidden="true">→</span></a>
     </article>
   );
+}
+
+function FundBrowsePanel({ funds, query, scope, currency, currencies, onQueryChange, onScopeChange, onCurrencyChange }: {
+  funds: FundCardData[];
+  query: string;
+  scope: FundScope;
+  currency: string;
+  currencies: string[];
+  onQueryChange: (value: string) => void;
+  onScopeChange: (value: FundScope) => void;
+  onCurrencyChange: (value: string) => void;
+}) {
+  const scopeLabel = scope === "domestic" ? "國內基金" : scope === "foreign" ? "國際基金" : "全部基金";
+  return <>
+    <div className="sec-title">{scopeLabel} — 搜尋與篩選</div>
+    <div className="fund-filter-bar" aria-label="基金搜尋與篩選">
+      <label className="fund-search-field"><span>搜尋</span><input value={query} onChange={event => onQueryChange(event.target.value)} placeholder="輸入基金名稱或代碼" aria-label="搜尋基金名稱或代碼" /></label>
+      <div className="fund-filter-group" aria-label="基金類型"><span className="filter-label">類型</span>{(["all", "domestic", "foreign"] as FundScope[]).map(value => <button className={`filter-chip ${scope === value ? "active" : ""}`} type="button" key={value} onClick={() => onScopeChange(value)}>{value === "all" ? "全部" : value === "domestic" ? "國內" : "國際"}</button>)}</div>
+      <label className="fund-currency-field"><span>幣別</span><select value={currency} onChange={event => onCurrencyChange(event.target.value)} aria-label="篩選基金幣別"><option value="all">全部幣別</option>{currencies.map(item => <option value={item} key={item}>{item}</option>)}</select></label>
+      <span className="filter-result-count">顯示 {funds.length} 檔</span>
+    </div>
+    <p className="fund-hint">可依基金名稱、代碼、國內／國際類型與計價幣別交叉篩選；點選卡片下方連結可檢視完整歷史淨值。</p>
+    {funds.length === 0 ? <div className="empty-inline">沒有符合條件的基金，請調整搜尋字詞或篩選條件。</div> : <div className="fund-grid">{funds.map(fund => <FundCard key={fund.id} fund={fund} />)}</div>}
+  </>;
 }
 
 function MarketCards({ market, cardOrder, onCardOrderChange }: { market: MarketItem[]; cardOrder: string[]; onCardOrderChange: (nextOrder: string[]) => void }) {
@@ -151,13 +179,7 @@ function MarketCards({ market, cardOrder, onCardOrderChange }: { market: MarketI
       <div className="index-bar" aria-label="可拖曳排序的市場行情卡片">
         {cards.map(item => (
           <article className={`idx-card ${draggedTicker === item.ticker ? "dragging" : ""}`} key={item.ticker} draggable onDragStart={() => setDraggedTicker(item.ticker)} onDragOver={event => event.preventDefault()} onDrop={() => reorder(item.ticker)} onDragEnd={() => setDraggedTicker(null)}>
-            <span className="idx-drag-handle" aria-hidden="true">⋮⋮</span>
-            <div className="idx-name">{item.name}</div>
-            <div className={`idx-val ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</div>
-            <div className={`idx-chg ${valueClass(item.percentChange)}`}>
-              {item.change === null ? "--" : `${item.change > 0 ? "+" : ""}${formatNumber(item.change)}`} ({returnText(item.percentChange)})
-            </div>
-            <div className="idx-ts">{item.quoteDate || "--"}</div>
+            <span className="idx-drag-handle" aria-hidden="true">⋮⋮</span><div className="idx-name">{item.name}</div><div className={`idx-val ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</div><div className={`idx-chg ${valueClass(item.percentChange)}`}>{item.change === null ? "--" : `${item.change > 0 ? "+" : ""}${formatNumber(item.change)}`} ({returnText(item.percentChange)})</div><div className="idx-ts">{item.quoteDate || "--"}</div>
           </article>
         ))}
       </div>
@@ -167,6 +189,9 @@ function MarketCards({ market, cardOrder, onCardOrderChange }: { market: MarketI
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabKey>(initialTabFromUrl);
+  const [fundQuery, setFundQuery] = useState("");
+  const [fundScope, setFundScope] = useState<FundScope>(() => initialTabFromUrl() === "foreign" ? "foreign" : "domestic");
+  const [fundCurrency, setFundCurrency] = useState("all");
   const [now, setNow] = useState(() => new Date());
   const [marketCardOrder, setMarketCardOrder] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -174,83 +199,45 @@ export default function Home() {
   });
   const { data, isLoading, isFetching, refetch } = trpc.dashboard.get.useQuery(undefined, { refetchInterval: 60_000 });
 
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 1_000);
-    return () => window.clearInterval(timer);
-  }, []);
+  useEffect(() => { const timer = window.setInterval(() => setNow(new Date()), 1_000); return () => window.clearInterval(timer); }, []);
 
+  const selectTab = (tab: TabKey) => {
+    setActiveTab(tab);
+    if (tab === "domestic" || tab === "foreign") setFundScope(tab);
+  };
   const saveMarketCardOrder = (nextOrder: string[]) => {
     setMarketCardOrder(nextOrder);
     if (nextOrder.length === 0) window.localStorage.removeItem("investment-dashboard-market-order");
     else window.localStorage.setItem("investment-dashboard-market-order", JSON.stringify(nextOrder));
   };
-
   const weeklyRanking = useMemo(() => {
-    const allFunds = [...(data?.domesticFunds ?? []), ...(data?.foreignFunds ?? [])];
-    return allFunds.sort((left, right) => (right.perf.week ?? -Infinity) - (left.perf.week ?? -Infinity));
+    const all = [...(data?.domesticFunds ?? []), ...(data?.foreignFunds ?? [])];
+    return all.sort((left, right) => (right.perf.week ?? -Infinity) - (left.perf.week ?? -Infinity));
   }, [data]);
-
+  const allFunds = useMemo(() => [...(data?.domesticFunds ?? []), ...(data?.foreignFunds ?? [])] as FundCardData[], [data]);
+  const availableCurrencies = useMemo(() => Array.from(new Set(allFunds.map(fund => fund.currency))).sort(), [allFunds]);
+  const filteredFunds = useMemo(() => filterFunds(allFunds, { query: fundQuery, scope: fundScope, currency: fundCurrency }), [allFunds, fundQuery, fundScope, fundCurrency]);
   const sidebarMarket = data?.market.filter(item => item.showAsCard).slice(0, 4) ?? [];
   const sidebarStocks = data?.market.filter(item => !item.showAsCard) ?? [];
   const sidebarDomestic = data?.domesticFunds.filter(fund => ["NOM006", "ALI006", "NOM008"].includes(fund.code ?? "")) ?? [];
   const sidebarForeign = data?.foreignFunds.slice(0, 2) ?? [];
   const dashboardStatus = data?.lastRefresh?.status === "failed" ? "更新失敗" : data?.lastRefresh?.status === "partial" ? "部分資料更新" : "每日自動更新";
 
-  return (
-    <div className="shell">
-      <header className="topbar">
-        <div className="brand"><span className="brand-dot" />投資儀表板<span className="public-label">PUBLIC</span></div>
-        <div className="topbar-right">
-          <span id="last-update">{dashboardStatus}：{formatDateTime(data?.lastRefresh?.finishedAt)}</span>
-          <span id="globalTime">{now.toLocaleTimeString("zh-TW", { hour12: false })}</span>
-          <button className="refresh-btn" onClick={() => refetch()} disabled={isFetching}>{isFetching ? "更新中" : "↻ 更新"}</button>
-        </div>
-      </header>
-
-      <aside className="sidebar" aria-label="市場摘要">
-        <div className="sb-label">全球指數</div>
-        {sidebarMarket.map(item => (
-          <button className="sb-item" key={item.ticker} onClick={() => setActiveTab("asia")}>
-            <div><div className="sb-code">{item.ticker.replace("^", "")}</div><div className="sb-name">{item.name}</div><div className="sb-ts">{item.quoteDate || "--"}</div></div>
-            <div><div className={`sb-price ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</div><div className={`sb-chg ${valueClass(item.percentChange)}`}>{returnText(item.percentChange)}</div></div>
-          </button>
-        ))}
-        <div className="sb-label">台股個股</div>
-        {sidebarStocks.map(item => (
-          <button className="sb-item" key={item.ticker} onClick={() => setActiveTab("asia")}>
-            <div><div className="sb-code">{item.ticker}</div><div className="sb-name">{item.name}</div><div className="sb-ts">{item.quoteDate || "--"}</div></div>
-            <div><div className={`sb-price ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</div><div className={`sb-chg ${valueClass(item.percentChange)}`}>{returnText(item.percentChange)}</div></div>
-          </button>
-        ))}
-        <div className="sb-label">國內基金</div>
-        {sidebarDomestic.map(fund => <button className="sb-item" key={fund.id} onClick={() => setActiveTab("domestic")}><div><div className="sb-code">{fund.code}</div><div className="sb-name">{fund.name.replace("基金", "")}</div><div className="sb-ts">{formatDate(fund.asOfDate)}</div></div><div className="sb-price">{formatNumber(fund.nav)}</div></button>)}
-        <div className="sb-label">國際基金</div>
-        {sidebarForeign.map(fund => <button className="sb-item" key={fund.id} onClick={() => setActiveTab("foreign")}><div><div className="sb-code">境外</div><div className="sb-name">{fund.name.replace("基金", "")}</div><div className="sb-ts">{formatDate(fund.asOfDate)}</div></div><div className="sb-price">{formatNumber(fund.nav, 4)}</div></button>)}
-      </aside>
-
-      <main className="main">
-        <nav className="tab-nav" aria-label="投資儀表板頁籤">
-          {tabs.map(tab => <button className={`tab ${activeTab === tab.key ? "active" : ""}`} key={tab.key} onClick={() => setActiveTab(tab.key)}>{tab.label}</button>)}
-        </nav>
-
-        {isLoading ? <div className="loading-state">正在讀取公開資料庫…</div> : null}
-
-        {activeTab === "asia" && <section className="panel active">
-          <MarketCards market={data?.market ?? []} cardOrder={marketCardOrder} onCardOrderChange={saveMarketCardOrder} />
-          <div className="sec-title">台股個股 / 全球指數</div>
-          <div className="table-wrap"><table className="dtable"><thead><tr><th>代碼</th><th className="left">名稱</th><th>現價</th><th>漲跌</th><th>漲跌幅</th><th>更新時間</th><th>狀態</th></tr></thead><tbody>
-            {(data?.market ?? []).map(item => <tr key={item.ticker}><td><span className="t-code">{item.ticker}</span></td><td className="left"><span className="t-name">{item.name}</span></td><td><span className={`t-price ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</span></td><td><span className={`t-chg ${valueClass(item.percentChange)}`}>{item.change === null ? "--" : `${item.change > 0 ? "+" : ""}${formatNumber(item.change)}`}</span></td><td><span className={`badge badge-${valueClass(item.percentChange)}`}>{returnText(item.percentChange)}</span></td><td className="t-ts"><span className="ts-dot live" />{item.quoteDate || "--"}</td><td><span className="badge badge-live">已更新</span></td></tr>)}
-          </tbody></table></div>
-        </section>}
-
-        {activeTab === "domestic" && <section className="panel active"><div className="sec-title">國內基金 — 最新淨值與多期間報酬</div><p className="fund-hint">每張基金卡片同步顯示一週、一個月、三個月、半年與一年漲跌幅；尚未取得的期間顯示「--」。</p><div className="fund-grid">{(data?.domesticFunds ?? []).map(fund => <FundCard key={fund.id} fund={fund} />)}</div></section>}
-
-        {activeTab === "foreign" && <section className="panel active"><div className="sec-title">國際基金 — 最新淨值與多期間報酬</div><p className="fund-hint">報酬率以基金原幣淨值計算；尚未取得的期間顯示「--」。</p><div className="fund-grid">{(data?.foreignFunds ?? []).map(fund => <FundCard key={fund.id} fund={fund} />)}</div></section>}
-
-        {activeTab === "performance" && <section className="panel active"><MarketCards market={data?.market ?? []} cardOrder={marketCardOrder} onCardOrderChange={saveMarketCardOrder} /><div className="sec-title">一週與一年漲跌幅排行</div><div className="table-wrap"><table className="dtable"><thead><tr><th>代碼</th><th className="left">名稱</th><th>淨值</th><th>日期</th><th>一週漲跌幅</th><th>一年漲跌幅</th><th>年度排名</th></tr></thead><tbody>{weeklyRanking.map(fund => <tr key={fund.id}><td><span className="t-code">{fund.code || "境外"}</span></td><td className="left"><span className="t-name">{fund.name}</span></td><td><span className="t-price">{fund.currency === "TWD" ? "" : `${fund.currency} `}{formatNumber(fund.nav, fund.currency === "TWD" ? 2 : 4)}</span></td><td className="t-ts">{formatDate(fund.asOfDate)}</td><td><span className={`badge badge-${valueClass(fund.perf.week)}`}>{returnText(fund.perf.week)}</span></td><td><span className={`badge badge-${valueClass(fund.perf.year)}`}>{returnText(fund.perf.year)}</span></td><td className="t-ts">{fund.annualRank ? `${fund.annualRank} / ${fund.annualTotal}` : "--"}</td></tr>)}</tbody></table></div></section>}
-
-        {activeTab === "news" && <section className="panel active"><div className="sec-title">財經即時新聞</div><div className="news-list">{(data?.news ?? []).length === 0 ? <div className="empty-inline">等待每日 RSS 更新。</div> : (data?.news ?? []).map(item => <article className="news-item" key={item.id}><a className="news-title" href={item.url} target="_blank" rel="noreferrer">{item.title}</a>{item.summary ? <p className="news-body">{item.summary}</p> : null}<div className="news-meta"><span>{formatDateTime(item.publishedAt)}</span><span>{item.source}</span></div></article>)}</div></section>}
-      </main>
-    </div>
-  );
+  return <div className="shell">
+    <header className="topbar"><div className="brand"><span className="brand-dot" />投資儀表板<span className="public-label">PUBLIC</span></div><div className="topbar-right"><span id="last-update">{dashboardStatus}：{formatDateTime(data?.lastRefresh?.finishedAt)}</span><span id="globalTime">{now.toLocaleTimeString("zh-TW", { hour12: false })}</span><button className="refresh-btn" onClick={() => refetch()} disabled={isFetching}>{isFetching ? "更新中" : "↻ 更新"}</button></div></header>
+    <aside className="sidebar" aria-label="市場摘要">
+      <div className="sb-label">全球指數</div>{sidebarMarket.map(item => <button className="sb-item" key={item.ticker} onClick={() => selectTab("asia")}><div><div className="sb-code">{item.ticker.replace("^", "")}</div><div className="sb-name">{item.name}</div><div className="sb-ts">{item.quoteDate || "--"}</div></div><div><div className={`sb-price ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</div><div className={`sb-chg ${valueClass(item.percentChange)}`}>{returnText(item.percentChange)}</div></div></button>)}
+      <div className="sb-label">台股個股</div>{sidebarStocks.map(item => <button className="sb-item" key={item.ticker} onClick={() => selectTab("asia")}><div><div className="sb-code">{item.ticker}</div><div className="sb-name">{item.name}</div><div className="sb-ts">{item.quoteDate || "--"}</div></div><div><div className={`sb-price ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</div><div className={`sb-chg ${valueClass(item.percentChange)}`}>{returnText(item.percentChange)}</div></div></button>)}
+      <div className="sb-label">國內基金</div>{sidebarDomestic.map(fund => <button className="sb-item" key={fund.id} onClick={() => selectTab("domestic")}><div><div className="sb-code">{fund.code}</div><div className="sb-name">{fund.name.replace("基金", "")}</div><div className="sb-ts">{formatDate(fund.asOfDate)}</div></div><div className="sb-price">{formatNumber(fund.nav)}</div></button>)}
+      <div className="sb-label">國際基金</div>{sidebarForeign.map(fund => <button className="sb-item" key={fund.id} onClick={() => selectTab("foreign")}><div><div className="sb-code">境外</div><div className="sb-name">{fund.name.replace("基金", "")}</div><div className="sb-ts">{formatDate(fund.asOfDate)}</div></div><div className="sb-price">{formatNumber(fund.nav, 4)}</div></button>)}
+    </aside>
+    <main className="main">
+      <nav className="tab-nav" aria-label="投資儀表板頁籤">{tabs.map(tab => <button className={`tab ${activeTab === tab.key ? "active" : ""}`} key={tab.key} onClick={() => selectTab(tab.key)}>{tab.label}</button>)}</nav>
+      {isLoading ? <div className="loading-state">正在讀取公開資料庫…</div> : null}
+      {activeTab === "asia" && <section className="panel active"><MarketCards market={data?.market ?? []} cardOrder={marketCardOrder} onCardOrderChange={saveMarketCardOrder} /><div className="sec-title">台股個股 / 全球指數</div><div className="table-wrap"><table className="dtable"><thead><tr><th>代碼</th><th className="left">名稱</th><th>現價</th><th>漲跌</th><th>漲跌幅</th><th>更新時間</th><th>狀態</th></tr></thead><tbody>{(data?.market ?? []).map(item => <tr key={item.ticker}><td><span className="t-code">{item.ticker}</span></td><td className="left"><span className="t-name">{item.name}</span></td><td><span className={`t-price ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</span></td><td><span className={`t-chg ${valueClass(item.percentChange)}`}>{item.change === null ? "--" : `${item.change > 0 ? "+" : ""}${formatNumber(item.change)}`}</span></td><td><span className={`badge badge-${valueClass(item.percentChange)}`}>{returnText(item.percentChange)}</span></td><td className="t-ts"><span className="ts-dot live" />{item.quoteDate || "--"}</td><td><span className="badge badge-live">已更新</span></td></tr>)}</tbody></table></div></section>}
+      {(activeTab === "domestic" || activeTab === "foreign") && <section className="panel active"><FundBrowsePanel funds={filteredFunds} query={fundQuery} scope={fundScope} currency={fundCurrency} currencies={availableCurrencies} onQueryChange={setFundQuery} onScopeChange={setFundScope} onCurrencyChange={setFundCurrency} /></section>}
+      {activeTab === "performance" && <section className="panel active"><MarketCards market={data?.market ?? []} cardOrder={marketCardOrder} onCardOrderChange={saveMarketCardOrder} /><div className="sec-title">一週與一年漲跌幅排行</div><div className="table-wrap"><table className="dtable"><thead><tr><th>代碼</th><th className="left">名稱</th><th>淨值</th><th>日期</th><th>一週漲跌幅</th><th>一年漲跌幅</th><th>年度排名</th></tr></thead><tbody>{weeklyRanking.map(fund => <tr key={fund.id}><td><span className="t-code">{fund.code || "境外"}</span></td><td className="left"><span className="t-name">{fund.name}</span></td><td><span className="t-price">{fund.currency === "TWD" ? "" : `${fund.currency} `}{formatNumber(fund.nav, fund.currency === "TWD" ? 2 : 4)}</span></td><td className="t-ts">{formatDate(fund.asOfDate)}</td><td><span className={`badge badge-${valueClass(fund.perf.week)}`}>{returnText(fund.perf.week)}</span></td><td><span className={`badge badge-${valueClass(fund.perf.year)}`}>{returnText(fund.perf.year)}</span></td><td className="t-ts">{fund.annualRank ? `${fund.annualRank} / ${fund.annualTotal}` : "--"}</td></tr>)}</tbody></table></div></section>}
+      {activeTab === "news" && <section className="panel active"><div className="sec-title">財經即時新聞</div><div className="news-list">{(data?.news ?? []).length === 0 ? <div className="empty-inline">等待每日 RSS 更新。</div> : (data?.news ?? []).map(item => <article className="news-item" key={item.id}><a className="news-title" href={item.url} target="_blank" rel="noreferrer">{item.title}</a>{item.summary ? <p className="news-body">{item.summary}</p> : null}<div className="news-meta"><span>{formatDateTime(item.publishedAt)}</span><span>{item.source}</span></div></article>)}</div></section>}
+    </main>
+  </div>;
 }
