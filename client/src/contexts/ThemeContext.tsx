@@ -30,6 +30,10 @@ export function ThemeProvider({
   });
 
   useEffect(() => {
+    // 此專案以 ThemeToggle 的 investment-dashboard-theme 為唯一主題來源。
+    // 未啟用 Context 切換時不可覆寫 html.dark，否則會清除已保存的深色偏好。
+    if (!switchable) return;
+
     const root = document.documentElement;
     if (theme === "dark") {
       root.classList.add("dark");
@@ -37,9 +41,7 @@ export function ThemeProvider({
       root.classList.remove("dark");
     }
 
-    if (switchable) {
-      localStorage.setItem("theme", theme);
-    }
+    localStorage.setItem("theme", theme);
   }, [theme, switchable]);
 
   const toggleTheme = switchable
