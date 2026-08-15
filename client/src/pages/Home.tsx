@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 type TabKey = "asia" | "domestic" | "foreign" | "performance" | "news";
 
 const tabs: Array<{ key: TabKey; label: string }> = [
-  { key: "asia", label: "亞洲市場" },
+  { key: "asia", label: "全球市場" },
   { key: "domestic", label: "國內基金" },
   { key: "foreign", label: "國際基金" },
   { key: "performance", label: "漲跌幅" },

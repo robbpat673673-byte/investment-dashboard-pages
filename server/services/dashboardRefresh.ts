@@ -50,7 +50,7 @@ const MARKET_CONFIG = [
   { ticker: "^HSI", name: "恒生指數", showAsCard: true, sortOrder: 3 },
   { ticker: "^TWII", name: "加權指數", showAsCard: true, sortOrder: 4 },
   { ticker: "^KS11", name: "KOSPI", showAsCard: true, sortOrder: 5 },
-  { ticker: "^BSESN", name: "SENSEX", showAsCard: true, sortOrder: 6 },
+  { ticker: "^SOX", name: "費城半導體指數", showAsCard: true, sortOrder: 6 },
   { ticker: "TSM", name: "台積電ADR", showAsCard: false, sortOrder: 7 },
   { ticker: "NVDA", name: "輝達", showAsCard: false, sortOrder: 8 },
 ];
