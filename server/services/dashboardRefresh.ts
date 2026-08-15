@@ -69,6 +69,11 @@ const MARKET_CONFIG = [
   { ticker: "^SOX", name: "費城半導體指數", showAsCard: true, sortOrder: 8 },
   { ticker: "TSM", name: "台積電ADR", showAsCard: false, sortOrder: 9 },
   { ticker: "NVDA", name: "輝達", showAsCard: false, sortOrder: 10 },
+  { ticker: "GC=F", name: "黃金期貨", showAsCard: false, sortOrder: 11 },
+  { ticker: "CL=F", name: "WTI 原油期貨", showAsCard: false, sortOrder: 12 },
+  { ticker: "BZ=F", name: "布蘭特原油期貨", showAsCard: false, sortOrder: 13 },
+  { ticker: "HG=F", name: "銅期貨", showAsCard: false, sortOrder: 14 },
+  { ticker: "NG=F", name: "天然氣期貨", showAsCard: false, sortOrder: 15 },
 ];
 
 const RSS_SOURCES = [

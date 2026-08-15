@@ -2,6 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { filterFunds, type FundScope } from "@/lib/fundFilters";
 import { moveMarketCard, orderMarketCards } from "@/lib/marketCardOrder";
 import { FAVORITE_FUNDS_STORAGE_KEY, createFavoriteExport, parseFavoriteFundIds, parseFavoriteImport, sortFundsByReturn, toggleFavoriteFundId, type FundSortKey } from "@/lib/fundPreferences";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useEffect, useMemo, useState } from "react";
 
 type TabKey = "asia" | "domestic" | "foreign" | "performance" | "news";
@@ -104,6 +105,8 @@ type MarketItem = {
   quoteDate: string | null;
   showAsCard: boolean;
 };
+
+const commodityTickers = new Set(["GC=F", "CL=F", "BZ=F", "HG=F", "NG=F"]);
 
 function Sparkline({ history, annualReturn }: { history: FundCardData["history"]; annualReturn: number | null }) {
   if (history.length < 2) return <div className="sparkline-empty">一年期淨值資料不足</div>;
@@ -268,16 +271,16 @@ export default function Home() {
   const availableCurrencies = useMemo(() => Array.from(new Set(allFunds.map(fund => fund.currency))).sort(), [allFunds]);
   const filteredFunds = useMemo(() => sortFundsByReturn(filterFunds(allFunds, { query: fundQuery, scope: fundScope, currency: fundCurrency }), fundSortKey), [allFunds, fundQuery, fundScope, fundCurrency, fundSortKey]);
   const favoriteFunds = useMemo(() => allFunds.filter(fund => favoriteFundIds.includes(fund.id)), [allFunds, favoriteFundIds]);
-  const sidebarMarket = data?.market.filter(item => item.showAsCard).slice(0, 4) ?? [];
-  const sidebarStocks = data?.market.filter(item => !item.showAsCard) ?? [];
+  const sidebarCommodities = data?.market.filter(item => commodityTickers.has(item.ticker)) ?? [];
+  const sidebarStocks = data?.market.filter(item => !item.showAsCard && !commodityTickers.has(item.ticker)) ?? [];
   const sidebarDomestic = data?.domesticFunds.filter(fund => ["NOM006", "ALI006", "NOM008"].includes(fund.code ?? "")) ?? [];
   const sidebarForeign = data?.foreignFunds.slice(0, 2) ?? [];
   const dashboardStatus = data?.lastRefresh?.status === "failed" ? "更新失敗" : data?.lastRefresh?.status === "partial" ? "部分資料更新" : "每日自動更新";
 
   return <div className="shell">
-    <header className="topbar"><div className="brand"><span className="brand-dot" />投資儀表板<span className="public-label">PUBLIC</span></div><div className="topbar-right"><span id="last-update">{dashboardStatus}：{formatDateTime(data?.lastRefresh?.finishedAt)}</span><span id="globalTime">{now.toLocaleTimeString("zh-TW", { hour12: false })}</span><button className="refresh-btn" onClick={() => refetch()} disabled={isFetching}>{isFetching ? "更新中" : "↻ 更新"}</button></div></header>
+    <header className="topbar"><div className="brand"><span className="brand-dot" />投資儀表板<span className="public-label">PUBLIC</span></div><div className="topbar-right"><span id="last-update">{dashboardStatus}：{formatDateTime(data?.lastRefresh?.finishedAt)}</span><span id="globalTime">{now.toLocaleTimeString("zh-TW", { hour12: false })}</span><ThemeToggle /><button className="refresh-btn" onClick={() => refetch()} disabled={isFetching}>{isFetching ? "更新中" : "↻ 更新"}</button></div></header>
     <aside className="sidebar" aria-label="市場摘要">
-      <div className="sb-label">全球指數</div>{sidebarMarket.map(item => <button className="sb-item" key={item.ticker} onClick={() => selectTab("asia")}><div><div className="sb-code">{item.ticker.replace("^", "")}</div><div className="sb-name">{item.name}</div><div className="sb-ts">{item.quoteDate || "--"}</div></div><div><div className={`sb-price ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</div><div className={`sb-chg ${valueClass(item.percentChange)}`}>{returnText(item.percentChange)}</div></div></button>)}
+      <div className="sb-label">原物料</div>{sidebarCommodities.map(item => <button className="sb-item" key={item.ticker} onClick={() => selectTab("asia")}><div><div className="sb-code">{item.ticker}</div><div className="sb-name">{item.name}</div><div className="sb-ts">{item.quoteDate || "--"}</div></div><div><div className={`sb-price ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</div><div className={`sb-chg ${valueClass(item.percentChange)}`}>{returnText(item.percentChange)}</div></div></button>)}
       <div className="sb-label">台股個股</div>{sidebarStocks.map(item => <button className="sb-item" key={item.ticker} onClick={() => selectTab("asia")}><div><div className="sb-code">{item.ticker}</div><div className="sb-name">{item.name}</div><div className="sb-ts">{item.quoteDate || "--"}</div></div><div><div className={`sb-price ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</div><div className={`sb-chg ${valueClass(item.percentChange)}`}>{returnText(item.percentChange)}</div></div></button>)}
       <div className="sb-label">國內基金</div>{sidebarDomestic.map(fund => <button className="sb-item" key={fund.id} onClick={() => selectTab("domestic")}><div><div className="sb-code">{fund.code}</div><div className="sb-name">{fund.name.replace("基金", "")}</div><div className="sb-ts">{formatDate(fund.asOfDate)}</div></div><div className="sb-price">{formatNumber(fund.nav)}</div></button>)}
       <div className="sb-label">國際基金</div>{sidebarForeign.map(fund => <button className="sb-item" key={fund.id} onClick={() => selectTab("foreign")}><div><div className="sb-code">境外</div><div className="sb-name">{fund.name.replace("基金", "")}</div><div className="sb-ts">{formatDate(fund.asOfDate)}</div></div><div className="sb-price">{formatNumber(fund.nav, 4)}</div></button>)}

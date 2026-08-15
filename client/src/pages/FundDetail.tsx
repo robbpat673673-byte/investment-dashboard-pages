@@ -1,6 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { buildMultiComparisonSeries, sliceHistoryByMonths, type NavHistoryPoint } from "@/lib/fundComparison";
 import { FAVORITE_FUNDS_STORAGE_KEY, parseFavoriteFundIds, toggleFavoriteFundId } from "@/lib/fundPreferences";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useMemo, useState } from "react";
 import { useLocation, useRoute } from "wouter";
 
@@ -65,7 +66,7 @@ export default function FundDetail() {
   const projectedCashflow = latestDistribution?.annualizedYield && fund.nav && holdingUnits > 0 ? holdingUnits * fund.nav * (latestDistribution.annualizedYield / 100) : null;
   const saveFavorites = (nextIds: number[]) => { setFavoriteFundIds(nextIds); if (nextIds.length === 0) window.localStorage.removeItem(FAVORITE_FUNDS_STORAGE_KEY); else window.localStorage.setItem(FAVORITE_FUNDS_STORAGE_KEY, JSON.stringify(nextIds)); };
   return <main className="detail-page">
-    <div className="detail-topline"><button className="back-link" onClick={() => setLocation(`/?tab=${fund.fundType}`)}>← 返回基金清單</button><span>公開基金資料</span></div>
+    <div className="detail-topline"><button className="back-link" onClick={() => setLocation(`/?tab=${fund.fundType}`)}>← 返回基金清單</button><div className="detail-topline-actions"><span>公開基金資料</span><ThemeToggle /></div></div>
     <header className="detail-hero"><div><div className="detail-code">{fund.code ?? `境外 · ${fund.currency}`}</div><h1>{fund.name}</h1><p>{fund.fundType === "domestic" ? "國內基金" : "國際基金"} · 計價幣別 {fund.currency}</p>{fund.isin || fund.bankCode ? <div className="fund-identifier-row">{fund.isin ? <span>ISIN：{fund.isin}</span> : null}{fund.bankCode ? <span>銀行／通路代號：{fund.bankCode}</span> : null}</div> : null}</div><div className="detail-latest"><span>最新淨值</span><strong>{fund.currency === "TWD" ? "" : `${fund.currency} `}{formatNumber(fund.nav, navDigits)}</strong><small>淨值日期：{formatDate(fund.asOfDate)}</small><button type="button" className={`detail-favorite-toggle ${isFavorite ? "active" : ""}`} onClick={() => saveFavorites(toggleFavoriteFundId(favoriteFundIds, fund.id))}>{isFavorite ? "★ 已加入自選" : "☆ 加入自選"}</button></div></header>
     <section className="detail-section"><div className="detail-section-title"><span>完整歷史淨值</span><small>共 {fund.history.length} 筆原始淨值</small></div><FullHistoryChart history={fund.history} /></section>
     <section className="detail-section"><div className="detail-section-title"><span>區間比較</span><small>以純淨值計算</small></div><div className="detail-performance-grid">{periodLabels.map(([key, label]) => <article className="detail-performance" key={key}><span>{label}</span><strong className={valueClass(fund.perf[key])}>{returnText(fund.perf[key])}</strong></article>)}</div></section>
