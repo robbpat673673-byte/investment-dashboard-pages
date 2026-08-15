@@ -9,7 +9,7 @@ describe("基金歷史淨值與新聞資料處理", () => {
     ]);
   });
 
-  it("以目標日期之前最近可得淨值計算五個期間報酬", () => {
+  it("以目標日期之前最近可得淨值計算各期間與 YTD 報酬", () => {
     const history = [
       { date: "2024-08-14", nav: 10 },
       { date: "2025-02-14", nav: 12 },
@@ -18,7 +18,7 @@ describe("基金歷史淨值與新聞資料處理", () => {
       { date: "2025-08-07", nav: 15 },
       { date: "2025-08-14", nav: 16 },
     ];
-    expect(calculatePerformances(history)).toEqual({ week: 6.6667, month: 14.2857, quarter: 23.0769, halfYear: 33.3333, year: 60 });
+    expect(calculatePerformances(history)).toEqual({ week: 6.6667, month: 14.2857, quarter: 23.0769, halfYear: 33.3333, year: 60, ytd: 60 });
   });
 
   it("移除 RSS HTML 並只接受安全的 HTTP(S) 連結", () => {

@@ -6,6 +6,7 @@ const PERIODS = [
   ["quarter", "months", 3],
   ["halfYear", "months", 6],
   ["year", "months", 12],
+  ["ytd", "yearStart", 0],
 ] as const;
 
 export type PerformanceValues = Record<(typeof PERIODS)[number][0], number | null>;
@@ -44,6 +45,10 @@ function subtractDays(isoDate: string, days: number): string {
   return target.toISOString().slice(0, 10);
 }
 
+function startOfYear(isoDate: string): string {
+  return `${isoDate.slice(0, 4)}-01-01`;
+}
+
 function navOnOrBefore(history: NavPoint[], targetDate: string): NavPoint | null {
   let candidate: NavPoint | null = null;
   for (const point of history) {
@@ -54,12 +59,16 @@ function navOnOrBefore(history: NavPoint[], targetDate: string): NavPoint | null
 }
 
 export function calculatePerformances(history: NavPoint[]): PerformanceValues {
-  const result: PerformanceValues = { week: null, month: null, quarter: null, halfYear: null, year: null };
+  const result: PerformanceValues = { week: null, month: null, quarter: null, halfYear: null, year: null, ytd: null };
   if (history.length < 2) return result;
 
   const latest = history[history.length - 1];
   for (const [key, kind, amount] of PERIODS) {
-    const target = kind === "days" ? subtractDays(latest.date, amount) : shiftMonths(latest.date, amount);
+    const target = kind === "days"
+      ? subtractDays(latest.date, amount)
+      : kind === "yearStart"
+        ? startOfYear(latest.date)
+        : shiftMonths(latest.date, amount);
     const baseline = navOnOrBefore(history, target);
     if (baseline && baseline.nav > 0) {
       result[key] = Number((((latest.nav / baseline.nav) - 1) * 100).toFixed(4));

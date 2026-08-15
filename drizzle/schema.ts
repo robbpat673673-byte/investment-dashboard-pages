@@ -36,6 +36,8 @@ export const funds = mysqlTable(
     name: varchar("name", { length: 160 }).notNull(),
     displayCode: varchar("displayCode", { length: 40 }),
     mcode: varchar("mcode", { length: 48 }).notNull(),
+    isin: varchar("isin", { length: 20 }),
+    bankCode: varchar("bankCode", { length: 48 }),
     currency: varchar("currency", { length: 8 }).notNull().default("TWD"),
     sortOrder: int("sortOrder").notNull(),
     isActive: boolean("isActive").notNull().default(true),
@@ -75,9 +77,30 @@ export const fundPerformances = mysqlTable(
     quarter: decimal("quarter", { precision: 10, scale: 4 }),
     halfYear: decimal("halfYear", { precision: 10, scale: 4 }),
     year: decimal("year", { precision: 10, scale: 4 }),
+    ytd: decimal("ytd", { precision: 10, scale: 4 }),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
   table => [uniqueIndex("fund_performances_fund_unique").on(table.fundId)],
+);
+
+export const fundDistributions = mysqlTable(
+  "fund_distributions",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    fundId: int("fundId").notNull(),
+    recordDate: date("recordDate"),
+    exDate: date("exDate").notNull(),
+    payoutDate: date("payoutDate"),
+    amount: decimal("amount", { precision: 18, scale: 6 }).notNull(),
+    annualizedYield: decimal("annualizedYield", { precision: 10, scale: 4 }),
+    currency: varchar("currency", { length: 8 }).notNull(),
+    sourceUrl: text("sourceUrl").notNull(),
+    sourcedAt: timestamp("sourcedAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("fund_distributions_fund_ex_date_unique").on(table.fundId, table.exDate),
+    index("fund_distributions_fund_date_idx").on(table.fundId, table.exDate),
+  ],
 );
 
 export const newsItems = mysqlTable(
@@ -113,6 +136,22 @@ export const marketQuotes = mysqlTable(
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
   table => [uniqueIndex("market_quotes_ticker_unique").on(table.ticker)],
+);
+
+export const marketHistory = mysqlTable(
+  "market_history",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    ticker: varchar("ticker", { length: 24 }).notNull(),
+    pointDate: date("pointDate").notNull(),
+    close: decimal("close", { precision: 18, scale: 6 }).notNull(),
+    source: varchar("source", { length: 80 }).notNull(),
+    sourcedAt: timestamp("sourcedAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("market_history_ticker_date_unique").on(table.ticker, table.pointDate),
+    index("market_history_ticker_date_idx").on(table.ticker, table.pointDate),
+  ],
 );
 
 export const refreshRuns = mysqlTable("refresh_runs", {

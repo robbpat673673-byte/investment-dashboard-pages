@@ -1,7 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { filterFunds, type FundScope } from "@/lib/fundFilters";
 import { moveMarketCard, orderMarketCards } from "@/lib/marketCardOrder";
-import { FAVORITE_FUNDS_STORAGE_KEY, parseFavoriteFundIds, sortFundsByReturn, toggleFavoriteFundId, type FundSortKey } from "@/lib/fundPreferences";
+import { FAVORITE_FUNDS_STORAGE_KEY, createFavoriteExport, parseFavoriteFundIds, parseFavoriteImport, sortFundsByReturn, toggleFavoriteFundId, type FundSortKey } from "@/lib/fundPreferences";
 import { useEffect, useMemo, useState } from "react";
 
 type TabKey = "asia" | "domestic" | "foreign" | "performance" | "news";
@@ -40,6 +40,8 @@ const fundSortOptions: Array<{ value: FundSortKey; label: string }> = [
   { value: "halfYear:asc", label: "半年報酬：低至高" },
   { value: "year:desc", label: "一年報酬：高至低" },
   { value: "year:asc", label: "一年報酬：低至高" },
+  { value: "ytd:desc", label: "YTD 報酬：高至低" },
+  { value: "ytd:asc", label: "YTD 報酬：低至高" },
 ];
 
 function formatNumber(value: number | null | undefined, digits = 2) {
@@ -88,7 +90,9 @@ type FundCardData = {
   history: Array<{ date: string; nav: number }>;
   annualRank: number | null;
   annualTotal: number;
-  perf: Record<(typeof periodLabels)[number][0], number | null>;
+  isin?: string | null;
+  bankCode?: string | null;
+  perf: Record<(typeof periodLabels)[number][0] | "ytd", number | null>;
 };
 
 type MarketItem = {
@@ -154,7 +158,7 @@ function FundCard({ fund, isFavorite = false, onToggleFavorite }: { fund: FundCa
   );
 }
 
-function FundBrowsePanel({ funds, favoriteFunds, query, scope, currency, sortKey, currencies, onQueryChange, onScopeChange, onCurrencyChange, onSortChange, onToggleFavorite, onClearFavorites }: {
+function FundBrowsePanel({ funds, favoriteFunds, query, scope, currency, sortKey, currencies, importMessage, onQueryChange, onScopeChange, onCurrencyChange, onSortChange, onToggleFavorite, onClearFavorites, onExportFavorites, onImportFavorites }: {
   funds: FundCardData[];
   favoriteFunds: FundCardData[];
   query: string;
@@ -162,25 +166,29 @@ function FundBrowsePanel({ funds, favoriteFunds, query, scope, currency, sortKey
   currency: string;
   sortKey: FundSortKey;
   currencies: string[];
+  importMessage: string | null;
   onQueryChange: (value: string) => void;
   onScopeChange: (value: FundScope) => void;
   onCurrencyChange: (value: string) => void;
   onSortChange: (value: FundSortKey) => void;
   onToggleFavorite: (id: number) => void;
   onClearFavorites: () => void;
+  onExportFavorites: () => void;
+  onImportFavorites: (file: File) => void;
 }) {
   const scopeLabel = scope === "domestic" ? "國內基金" : scope === "foreign" ? "國際基金" : "全部基金";
   return <>
     <div className="sec-title">{scopeLabel} — 搜尋與篩選</div>
     <div className="fund-filter-bar" aria-label="基金搜尋與篩選">
-      <label className="fund-search-field"><span>搜尋</span><input value={query} onChange={event => onQueryChange(event.target.value)} placeholder="輸入基金名稱或代碼" aria-label="搜尋基金名稱或代碼" /></label>
+      <label className="fund-search-field"><span>搜尋</span><input value={query} onChange={event => onQueryChange(event.target.value)} placeholder="名稱、代碼、ISIN 或銀行／通路代號" aria-label="搜尋基金名稱、代碼、ISIN 或銀行代號" /></label>
       <div className="fund-filter-group" aria-label="基金類型"><span className="filter-label">類型</span>{(["all", "domestic", "foreign"] as FundScope[]).map(value => <button className={`filter-chip ${scope === value ? "active" : ""}`} type="button" key={value} onClick={() => onScopeChange(value)}>{value === "all" ? "全部" : value === "domestic" ? "國內" : "國際"}</button>)}</div>
       <label className="fund-currency-field"><span>幣別</span><select value={currency} onChange={event => onCurrencyChange(event.target.value)} aria-label="篩選基金幣別"><option value="all">全部幣別</option>{currencies.map(item => <option value={item} key={item}>{item}</option>)}</select></label>
       <label className="fund-sort-field"><span>排序</span><select value={sortKey} onChange={event => onSortChange(event.target.value as FundSortKey)} aria-label="依區間報酬率排序">{fundSortOptions.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
       <span className="filter-result-count">顯示 {funds.length} 檔</span>
     </div>
-    <p className="fund-hint">可依基金名稱、代碼、國內／國際類型、計價幣別與不同區間報酬率交叉篩選；自選清單僅儲存在此瀏覽器。</p>
-    {favoriteFunds.length > 0 ? <section className="favorite-panel"><div className="favorite-panel-head"><strong>★ 自選追蹤清單</strong><span>{favoriteFunds.length} 檔</span><button type="button" onClick={onClearFavorites}>清除自選</button></div><div className="fund-grid favorite-grid">{favoriteFunds.map(fund => <FundCard key={fund.id} fund={fund} isFavorite onToggleFavorite={onToggleFavorite} />)}</div></section> : <div className="favorite-empty">尚未加入自選基金；點選基金卡片右上角即可追蹤。</div>}
+    <p className="fund-hint">可依基金名稱、代碼、ISIN、銀行／通路代號、類型、幣別與不同區間報酬率交叉篩選；自選清單儲存在此瀏覽器，可匯出備份或匯入還原。</p>
+    {favoriteFunds.length > 0 ? <section className="favorite-panel"><div className="favorite-panel-head"><strong>★ 自選追蹤清單</strong><span>{favoriteFunds.length} 檔</span><button type="button" onClick={onExportFavorites}>匯出 JSON</button><label className="favorite-import"><span>匯入 JSON</span><input type="file" accept="application/json,.json" onChange={event => { const file = event.target.files?.[0]; if (file) onImportFavorites(file); event.currentTarget.value = ""; }} /></label><button type="button" onClick={onClearFavorites}>清除自選</button></div>{importMessage ? <p className="favorite-import-message">{importMessage}</p> : null}<div className="fund-grid favorite-grid">{favoriteFunds.map(fund => <FundCard key={fund.id} fund={fund} isFavorite onToggleFavorite={onToggleFavorite} />)}</div></section> : <section className="favorite-empty">尚未加入自選基金；點選基金卡片右上角即可追蹤。<div className="favorite-empty-actions"><button type="button" onClick={onExportFavorites}>匯出空白清單</button><label className="favorite-import"><span>匯入 JSON</span><input type="file" accept="application/json,.json" onChange={event => { const file = event.target.files?.[0]; if (file) onImportFavorites(file); event.currentTarget.value = ""; }} /></label></div>{importMessage ? <p className="favorite-import-message">{importMessage}</p> : null}</section>}
+    <section className="fund-metric-table-wrap"><div className="detail-section-title"><span>區間報酬快速比較</span><small>點擊欄位標題排序</small></div><div className="table-wrap"><table className="dtable fund-metric-table"><thead><tr><th className="left">基金</th>{(["month", "quarter", "ytd"] as const).map(period => { const label = period === "month" ? "近 1 月" : period === "quarter" ? "近 3 月" : "YTD"; const nextSort: FundSortKey = sortKey === `${period}:desc` ? `${period}:asc` : `${period}:desc`; return <th key={period}><button type="button" className="metric-sort-button" onClick={() => onSortChange(nextSort)}>{label}{sortKey.startsWith(`${period}:`) ? sortKey.endsWith("desc") ? " ↓" : " ↑" : " ↕"}</button></th>; })}</tr></thead><tbody>{funds.map(fund => <tr key={fund.id}><td className="left"><a className="metric-fund-link" href={`/fund/${fund.id}`}>{fund.code ?? "境外"} · {fund.name}</a></td><td className={valueClass(fund.perf.month)}>{returnText(fund.perf.month)}</td><td className={valueClass(fund.perf.quarter)}>{returnText(fund.perf.quarter)}</td><td className={valueClass(fund.perf.ytd)}>{returnText(fund.perf.ytd)}</td></tr>)}</tbody></table></div></section>
     {funds.length === 0 ? <div className="empty-inline">沒有符合條件的基金，請調整搜尋字詞或篩選條件。</div> : <div className="fund-grid">{funds.map(fund => <FundCard key={fund.id} fund={fund} isFavorite={favoriteFunds.some(item => item.id === fund.id)} onToggleFavorite={onToggleFavorite} />)}</div>}
   </>;
 }
@@ -215,6 +223,7 @@ export default function Home() {
   const [fundCurrency, setFundCurrency] = useState("all");
   const [fundSortKey, setFundSortKey] = useState<FundSortKey>("default");
   const [favoriteFundIds, setFavoriteFundIds] = useState<number[]>(() => typeof window === "undefined" ? [] : parseFavoriteFundIds(window.localStorage.getItem(FAVORITE_FUNDS_STORAGE_KEY)));
+  const [favoriteImportMessage, setFavoriteImportMessage] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [marketCardOrder, setMarketCardOrder] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -237,6 +246,19 @@ export default function Home() {
     setFavoriteFundIds(nextIds);
     if (nextIds.length === 0) window.localStorage.removeItem(FAVORITE_FUNDS_STORAGE_KEY);
     else window.localStorage.setItem(FAVORITE_FUNDS_STORAGE_KEY, JSON.stringify(nextIds));
+  };
+  const exportFavorites = () => {
+    const blob = new Blob([createFavoriteExport(favoriteFundIds)], { type: "application/json" });
+    const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = "investment-dashboard-favorites.json"; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url); setFavoriteImportMessage(`已匯出 ${favoriteFundIds.length} 檔自選基金。`);
+  };
+  const importFavorites = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const imported = parseFavoriteImport(String(reader.result ?? ""));
+      if (!imported) { setFavoriteImportMessage("匯入失敗：請選擇由本儀表板匯出的 JSON 備份檔。 "); return; }
+      const knownIds = new Set(allFunds.map(fund => fund.id)); const restored = imported.fundIds.filter(id => knownIds.has(id)); saveFavoriteFundIds(restored); setFavoriteImportMessage(`已還原 ${restored.length} 檔自選基金${imported.fundIds.length !== restored.length ? "；已略過目前不存在的基金。" : "。"}`);
+    };
+    reader.onerror = () => setFavoriteImportMessage("匯入失敗：無法讀取備份檔。 "); reader.readAsText(file, "utf-8");
   };
   const weeklyRanking = useMemo(() => {
     const all = [...(data?.domesticFunds ?? []), ...(data?.foreignFunds ?? [])];
@@ -264,8 +286,8 @@ export default function Home() {
       <nav className="tab-nav" aria-label="投資儀表板頁籤">{tabs.map(tab => <button className={`tab ${activeTab === tab.key ? "active" : ""}`} key={tab.key} onClick={() => selectTab(tab.key)}>{tab.label}</button>)}</nav>
       {isLoading ? <div className="loading-state">正在讀取公開資料庫…</div> : null}
       {activeTab === "asia" && <section className="panel active"><MarketCards market={data?.market ?? []} cardOrder={marketCardOrder} onCardOrderChange={saveMarketCardOrder} /><div className="sec-title">台股個股 / 全球指數</div><div className="table-wrap"><table className="dtable"><thead><tr><th>代碼</th><th className="left">名稱</th><th>現價</th><th>漲跌</th><th>漲跌幅</th><th>更新時間</th><th>狀態</th></tr></thead><tbody>{(data?.market ?? []).map(item => <tr key={item.ticker}><td><span className="t-code">{item.ticker}</span></td><td className="left"><span className="t-name">{item.name}</span></td><td><span className={`t-price ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</span></td><td><span className={`t-chg ${valueClass(item.percentChange)}`}>{item.change === null ? "--" : `${item.change > 0 ? "+" : ""}${formatNumber(item.change)}`}</span></td><td><span className={`badge badge-${valueClass(item.percentChange)}`}>{returnText(item.percentChange)}</span></td><td className="t-ts"><span className="ts-dot live" />{item.quoteDate || "--"}</td><td><span className="badge badge-live">已更新</span></td></tr>)}</tbody></table></div></section>}
-      {(activeTab === "domestic" || activeTab === "foreign") && <section className="panel active"><FundBrowsePanel funds={filteredFunds} favoriteFunds={favoriteFunds} query={fundQuery} scope={fundScope} currency={fundCurrency} sortKey={fundSortKey} currencies={availableCurrencies} onQueryChange={setFundQuery} onScopeChange={setFundScope} onCurrencyChange={setFundCurrency} onSortChange={setFundSortKey} onToggleFavorite={id => saveFavoriteFundIds(toggleFavoriteFundId(favoriteFundIds, id))} onClearFavorites={() => saveFavoriteFundIds([])} /></section>}
-      {activeTab === "performance" && <section className="panel active"><MarketCards market={data?.market ?? []} cardOrder={marketCardOrder} onCardOrderChange={saveMarketCardOrder} /><div className="sec-title">一週與一年漲跌幅排行</div><div className="table-wrap"><table className="dtable"><thead><tr><th>代碼</th><th className="left">名稱</th><th>淨值</th><th>日期</th><th>一週漲跌幅</th><th>一年漲跌幅</th><th>年度排名</th></tr></thead><tbody>{weeklyRanking.map(fund => <tr key={fund.id}><td><span className="t-code">{fund.code || "境外"}</span></td><td className="left"><span className="t-name">{fund.name}</span></td><td><span className="t-price">{fund.currency === "TWD" ? "" : `${fund.currency} `}{formatNumber(fund.nav, fund.currency === "TWD" ? 2 : 4)}</span></td><td className="t-ts">{formatDate(fund.asOfDate)}</td><td><span className={`badge badge-${valueClass(fund.perf.week)}`}>{returnText(fund.perf.week)}</span></td><td><span className={`badge badge-${valueClass(fund.perf.year)}`}>{returnText(fund.perf.year)}</span></td><td className="t-ts">{fund.annualRank ? `${fund.annualRank} / ${fund.annualTotal}` : "--"}</td></tr>)}</tbody></table></div></section>}
+      {(activeTab === "domestic" || activeTab === "foreign") && <section className="panel active"><FundBrowsePanel funds={filteredFunds} favoriteFunds={favoriteFunds} query={fundQuery} scope={fundScope} currency={fundCurrency} sortKey={fundSortKey} currencies={availableCurrencies} importMessage={favoriteImportMessage} onQueryChange={setFundQuery} onScopeChange={setFundScope} onCurrencyChange={setFundCurrency} onSortChange={setFundSortKey} onToggleFavorite={id => saveFavoriteFundIds(toggleFavoriteFundId(favoriteFundIds, id))} onClearFavorites={() => saveFavoriteFundIds([])} onExportFavorites={exportFavorites} onImportFavorites={importFavorites} /></section>}
+      {activeTab === "performance" && <section className="panel active"><MarketCards market={data?.market ?? []} cardOrder={marketCardOrder} onCardOrderChange={saveMarketCardOrder} /><div className="sec-title">一週、一月、三月、YTD 與一年漲跌幅排行</div><div className="table-wrap"><table className="dtable"><thead><tr><th>代碼</th><th className="left">名稱</th><th>淨值</th><th>日期</th><th>一週</th><th>近 1 月</th><th>近 3 月</th><th>YTD</th><th>一年</th><th>年度排名</th></tr></thead><tbody>{weeklyRanking.map(fund => <tr key={fund.id}><td><span className="t-code">{fund.code || "境外"}</span></td><td className="left"><span className="t-name">{fund.name}</span></td><td><span className="t-price">{fund.currency === "TWD" ? "" : `${fund.currency} `}{formatNumber(fund.nav, fund.currency === "TWD" ? 2 : 4)}</span></td><td className="t-ts">{formatDate(fund.asOfDate)}</td><td><span className={`badge badge-${valueClass(fund.perf.week)}`}>{returnText(fund.perf.week)}</span></td><td><span className={`badge badge-${valueClass(fund.perf.month)}`}>{returnText(fund.perf.month)}</span></td><td><span className={`badge badge-${valueClass(fund.perf.quarter)}`}>{returnText(fund.perf.quarter)}</span></td><td><span className={`badge badge-${valueClass(fund.perf.ytd)}`}>{returnText(fund.perf.ytd)}</span></td><td><span className={`badge badge-${valueClass(fund.perf.year)}`}>{returnText(fund.perf.year)}</span></td><td className="t-ts">{fund.annualRank ? `${fund.annualRank} / ${fund.annualTotal}` : "--"}</td></tr>)}</tbody></table></div></section>}
       {activeTab === "news" && <section className="panel active"><div className="sec-title">財經即時新聞</div><div className="news-list">{(data?.news ?? []).length === 0 ? <div className="empty-inline">等待每日 RSS 更新。</div> : (data?.news ?? []).map(item => <article className="news-item" key={item.id}><a className="news-title" href={item.url} target="_blank" rel="noreferrer">{item.title}</a>{item.summary ? <p className="news-body">{item.summary}</p> : null}<div className="news-meta"><span>{formatDateTime(item.publishedAt)}</span><span>{item.source}</span></div></article>)}</div></section>}
     </main>
   </div>;

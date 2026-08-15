@@ -15,6 +15,13 @@
       "when": 1786716324430,
       "tag": "0001_round_kat_farrell",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1786795841639,
+      "tag": "0002_misty_roxanne_simpson",
+      "breakpoints": true
     }
   ]
 }

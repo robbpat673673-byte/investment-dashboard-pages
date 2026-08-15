@@ -4,7 +4,9 @@ import { getDb } from "../db";
 import {
   fundNavHistory,
   fundPerformances,
+  fundDistributions,
   funds,
+  marketHistory,
   marketQuotes,
   newsItems,
   refreshRuns,
@@ -17,15 +19,16 @@ type FundConfig = {
   name: string;
   displayCode: string | null;
   mcode: string;
+  isin?: string;
   currency: string;
   sortOrder: number;
 };
 
 const FUND_CONFIG: FundConfig[] = [
-  { fundType: "domestic", name: "野村台灣運籌基金", displayCode: "NOM006", mcode: "ACKH03-006018", currency: "TWD", sortOrder: 1 },
+  { fundType: "domestic", name: "野村台灣運籌基金", displayCode: "NOM006", mcode: "ACKH03-006018", isin: "TW000T3218Y2", currency: "TWD", sortOrder: 1 },
   { fundType: "domestic", name: "合庫台灣基金", displayCode: "COB001", mcode: "ACCB01-047001", currency: "TWD", sortOrder: 2 },
   { fundType: "domestic", name: "野村鴻運基金", displayCode: "NOM001", mcode: "AC0001-006034", currency: "TWD", sortOrder: 3 },
-  { fundType: "domestic", name: "安聯台灣科技基金", displayCode: "ALI006", mcode: "ACDD04-005003", currency: "TWD", sortOrder: 4 },
+  { fundType: "domestic", name: "安聯台灣科技基金", displayCode: "ALI006", mcode: "ACDD04-005003", isin: "TW000T3604Y3", currency: "TWD", sortOrder: 4 },
   { fundType: "domestic", name: "野村e科技基金", displayCode: "NOM005", mcode: "ACIC06-006004", currency: "TWD", sortOrder: 5 },
   { fundType: "domestic", name: "合庫台灣高科技基金", displayCode: "COB003", mcode: "ACCB78-047003", currency: "TWD", sortOrder: 6 },
   { fundType: "domestic", name: "第一金電子基金", displayCode: "FIR001", mcode: "ACNC16-039016", currency: "TWD", sortOrder: 7 },
@@ -102,10 +105,20 @@ async function fetchText(url: string): Promise<string> {
 export async function ensureFundConfiguration() {
   const db = await getDb();
   if (!db) throw new Error("資料庫尚未連線");
-  const existing = await db.select({ mcode: funds.mcode }).from(funds);
-  const existingMcodes = new Set(existing.map(row => row.mcode));
-  const missing = FUND_CONFIG.filter(fund => !existingMcodes.has(fund.mcode));
-  if (missing.length > 0) await db.insert(funds).values(missing);
+  for (const fund of FUND_CONFIG) {
+    const bankCode = fund.mcode.split("-")[1] ?? null;
+    await db.insert(funds).values({ ...fund, bankCode }).onDuplicateKeyUpdate({
+      set: {
+        name: fund.name,
+        displayCode: fund.displayCode,
+        isin: fund.isin ?? null,
+        bankCode,
+        currency: fund.currency,
+        sortOrder: fund.sortOrder,
+        isActive: true,
+      },
+    });
+  }
 }
 
 async function fetchFundHistory(fund: { mcode: string; fundType: "domestic" | "foreign" }): Promise<NavPoint[]> {
@@ -118,6 +131,51 @@ async function fetchFundHistory(fund: { mcode: string; fundType: "domestic" | "f
     : "https://fund.hncb.com.tw/w/bcd/tBCDNavList.djbcd";
   const url = `${base}?a=${encodeURIComponent(chartId)}&b=2&c=${format(start)}&d=${format(now)}`;
   return parseHistoryPayload(await fetchText(url));
+}
+
+type DistributionPoint = { recordDate: string | null; exDate: string; payoutDate: string | null; amount: number; annualizedYield: number | null; currency: string; sourceUrl: string };
+
+function parseMoneyDate(value: string) {
+  const match = value.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : null;
+}
+
+function parseFundDistributions(payload: string, sourceUrl: string): DistributionPoint[] {
+  const parsed = new Map<string, DistributionPoint>();
+  for (const row of payload.match(/<tr\b[\s\S]*?<\/tr>/gi) ?? []) {
+    const cells = Array.from(row.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)).map(match => cleanText(match[1], 120));
+    if (cells.length < 8) continue;
+    const exDate = parseMoneyDate(cells[1] ?? "");
+    const amount = Number((cells[4] ?? "").replace(/,/g, ""));
+    if (!exDate || !Number.isFinite(amount) || amount <= 0) continue;
+    parsed.set(exDate, {
+      recordDate: parseMoneyDate(cells[0] ?? ""),
+      exDate,
+      payoutDate: parseMoneyDate(cells[2] ?? ""),
+      amount,
+      annualizedYield: Number.isFinite(Number(cells[5])) ? Number(cells[5]) : null,
+      currency: cells[6] || "",
+      sourceUrl,
+    });
+  }
+  return Array.from(parsed.values());
+}
+
+async function fetchFundDistributions(fund: { mcode: string; fundType: "domestic" | "foreign" }) {
+  if (fund.fundType !== "domestic") return [];
+  const sourceUrl = `https://www.moneydj.com/funddj/yp/funddividend.djhtm?a=${encodeURIComponent(fund.mcode.split("-", 1)[0].toLowerCase())}`;
+  return parseFundDistributions(await fetchText(sourceUrl), sourceUrl);
+}
+
+async function fetchMarketHistory(ticker: string): Promise<NavPoint[]> {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=2y&interval=1d`;
+  const payload = JSON.parse(await fetchText(url)) as { chart?: { result?: Array<{ timestamp?: number[]; indicators?: { quote?: Array<{ close?: Array<number | null> }> } }> } };
+  const chart = payload.chart?.result?.[0];
+  const closes = chart?.indicators?.quote?.[0]?.close ?? [];
+  const timestamps = chart?.timestamp ?? [];
+  return closes.map((nav, index) => ({ nav, timestamp: timestamps[index] }))
+    .filter((point): point is { nav: number; timestamp: number } => typeof point.nav === "number" && Number.isFinite(point.nav) && typeof point.timestamp === "number")
+    .map(point => ({ date: new Date(point.timestamp * 1000).toISOString().slice(0, 10), nav: point.nav }));
 }
 
 function getXmlTag(block: string, tagName: string): string {
@@ -214,6 +272,19 @@ export async function refreshDashboardData() {
           updatedAt: new Date(),
         },
       });
+      const distributions = await fetchFundDistributions(fund);
+      if (distributions.length > 0) {
+        await db.insert(fundDistributions).values(distributions.map(item => ({
+          fundId: fund.id,
+          recordDate: item.recordDate ? databaseDate(item.recordDate) : null,
+          exDate: databaseDate(item.exDate),
+          payoutDate: item.payoutDate ? databaseDate(item.payoutDate) : null,
+          amount: item.amount.toFixed(6),
+          annualizedYield: item.annualizedYield === null ? null : item.annualizedYield.toFixed(4),
+          currency: item.currency || fund.currency,
+          sourceUrl: item.sourceUrl,
+        }))).onDuplicateKeyUpdate({ set: { amount: sql`VALUES(amount)`, annualizedYield: sql`VALUES(annualizedYield)`, payoutDate: sql`VALUES(payoutDate)`, sourcedAt: new Date() } });
+      }
       fundsUpdated += 1;
     } catch (error) {
       errors.push(`${fund.name}：${error instanceof Error ? error.message : "更新失敗"}`);
@@ -252,6 +323,15 @@ export async function refreshDashboardData() {
     } catch (error) {
       errors.push(`${config.name} 行情：${error instanceof Error ? error.message : "更新失敗"}`);
     }
+  }
+
+  try {
+    const benchmarkHistory = await fetchMarketHistory("^GSPC");
+    for (let index = 0; index < benchmarkHistory.length; index += 250) {
+      await db.insert(marketHistory).values(benchmarkHistory.slice(index, index + 250).map(point => ({ ticker: "^GSPC", pointDate: databaseDate(point.date), close: point.nav.toFixed(6), source: "Yahoo Finance" }))).onDuplicateKeyUpdate({ set: { close: sql`VALUES(close)`, sourcedAt: new Date() } });
+    }
+  } catch (error) {
+    errors.push(`S&P 500 歷史：${error instanceof Error ? error.message : "更新失敗"}`);
   }
 
   const status = errors.length === 0 ? "success" : fundsUpdated > 0 || fetchedNews.length > 0 ? "partial" : "failed";
@@ -309,7 +389,10 @@ export async function getPublicDashboardData() {
         quarter: performance ? decimal(performance.quarter) : null,
         halfYear: performance ? decimal(performance.halfYear) : null,
         year: performance ? decimal(performance.year) : null,
+        ytd: performance ? decimal(performance.ytd) : null,
       },
+      isin: fund.isin,
+      bankCode: fund.bankCode,
     };
   };
   const quotes = await db.select().from(marketQuotes).orderBy(marketQuotes.sortOrder);
@@ -347,6 +430,8 @@ export async function getPublicFundDetail(fundId: number) {
     .from(fundNavHistory)
     .where(eq(fundNavHistory.fundId, fund.id))
     .orderBy(fundNavHistory.navDate);
+  const distributionRows = await db.select().from(fundDistributions).where(eq(fundDistributions.fundId, fund.id)).orderBy(fundDistributions.exDate);
+  const benchmarkRows = await db.select().from(marketHistory).where(eq(marketHistory.ticker, "^GSPC")).orderBy(marketHistory.pointDate);
   const history = navRows.map(row => ({
     date: row.navDate instanceof Date ? row.navDate.toISOString().slice(0, 10) : String(row.navDate).slice(0, 10),
     nav: Number(row.nav),
@@ -357,9 +442,19 @@ export async function getPublicFundDetail(fundId: number) {
     code: fund.displayCode,
     fundType: fund.fundType,
     currency: fund.currency,
+    isin: fund.isin,
+    bankCode: fund.bankCode,
     latestNav: performance ? decimal(performance.latestNav) : null,
     asOfDate: performance?.asOfDate ?? null,
     history,
+    distributions: distributionRows.map(item => ({
+      exDate: item.exDate instanceof Date ? item.exDate.toISOString().slice(0, 10) : String(item.exDate).slice(0, 10),
+      amount: Number(item.amount),
+      annualizedYield: decimal(item.annualizedYield),
+      payoutDate: item.payoutDate instanceof Date ? item.payoutDate.toISOString().slice(0, 10) : item.payoutDate ? String(item.payoutDate).slice(0, 10) : null,
+      sourceUrl: item.sourceUrl,
+    })),
+    benchmarkHistory: benchmarkRows.map(item => ({ date: item.pointDate instanceof Date ? item.pointDate.toISOString().slice(0, 10) : String(item.pointDate).slice(0, 10), nav: Number(item.close) })),
     lastSyncedAt: navRows.at(-1)?.sourcedAt ?? null,
   });
 }

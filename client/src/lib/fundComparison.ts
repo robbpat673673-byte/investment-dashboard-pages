@@ -11,6 +11,38 @@ export type FundComparisonSeries = {
   max: number;
 };
 
+export type ComparisonLine = { key: string; label: string; history: NavHistoryPoint[] };
+export type MultiComparisonSeries = { startDate: string; endDate: string; lines: Array<{ key: string; label: string; points: ComparisonPoint[] }>; min: number; max: number };
+
+export function sliceHistoryByMonths(history: NavHistoryPoint[], months: number | null): NavHistoryPoint[] {
+  if (!months || history.length === 0) return history;
+  const latest = new Date(`${history.at(-1)!.date}T00:00:00.000Z`);
+  latest.setUTCMonth(latest.getUTCMonth() - months);
+  return history.filter(point => new Date(`${point.date}T00:00:00.000Z`).getTime() >= latest.getTime());
+}
+
+/** 將任意多條序列裁切至共同期間，並各自以共同區間的第一筆可用資料正規化為 100。 */
+export function buildMultiComparisonSeries(lines: ComparisonLine[]): MultiComparisonSeries | null {
+  const usable = lines.filter(line => line.history.length >= 2);
+  if (usable.length < 2) return null;
+  const start = Math.max(...usable.map(line => new Date(`${line.history[0]!.date}T00:00:00.000Z`).getTime()));
+  const end = Math.min(...usable.map(line => new Date(`${line.history.at(-1)!.date}T00:00:00.000Z`).getTime()));
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+  const span = end - start;
+  const normalizedLines = usable.map(line => {
+    const points = line.history.filter(point => {
+      const timestamp = new Date(`${point.date}T00:00:00.000Z`).getTime();
+      return timestamp >= start && timestamp <= end;
+    });
+    if (points.length < 2) return null;
+    const base = points[0]!.nav || 1;
+    return { key: line.key, label: line.label, points: points.map(point => ({ x: ((new Date(`${point.date}T00:00:00.000Z`).getTime() - start) / span) * 100, value: (point.nav / base) * 100 })) };
+  }).filter((line): line is { key: string; label: string; points: ComparisonPoint[] } => line !== null);
+  if (normalizedLines.length < 2) return null;
+  const values = normalizedLines.flatMap(line => line.points.map(point => point.value));
+  return { startDate: new Date(start).toISOString().slice(0, 10), endDate: new Date(end).toISOString().slice(0, 10), lines: normalizedLines, min: Math.min(...values), max: Math.max(...values) };
+}
+
 /** 取兩檔基金的可重疊歷史區間，將各自首筆可用淨值正規化為 100。 */
 export function buildFundComparisonSeries(primaryHistory: NavHistoryPoint[], secondaryHistory: NavHistoryPoint[]): FundComparisonSeries | null {
   if (primaryHistory.length < 2 || secondaryHistory.length < 2) return null;
