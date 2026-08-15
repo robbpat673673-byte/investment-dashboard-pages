@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { moveMarketCard, orderMarketCards } from "@/lib/marketCardOrder";
 import { useEffect, useMemo, useState } from "react";
 
 type TabKey = "asia" | "domestic" | "foreign" | "performance" | "news";
@@ -72,6 +73,16 @@ type FundCardData = {
   perf: Record<(typeof periodLabels)[number][0], number | null>;
 };
 
+type MarketItem = {
+  ticker: string;
+  name: string;
+  price: number | null;
+  change: number | null;
+  percentChange: number | null;
+  quoteDate: string | null;
+  showAsCard: boolean;
+};
+
 function Sparkline({ history, annualReturn }: { history: FundCardData["history"]; annualReturn: number | null }) {
   if (history.length < 2) return <div className="sparkline-empty">一年期淨值資料不足</div>;
   const values = history.map(point => point.nav);
@@ -125,21 +136,31 @@ function FundCard({ fund }: { fund: FundCardData }) {
   );
 }
 
-function MarketCards({ market }: { market: Array<{ ticker: string; name: string; price: number | null; change: number | null; percentChange: number | null; quoteDate: string | null; showAsCard: boolean }> }) {
-  const cards = market.filter(item => item.showAsCard);
+function MarketCards({ market, cardOrder, onCardOrderChange }: { market: MarketItem[]; cardOrder: string[]; onCardOrderChange: (nextOrder: string[]) => void }) {
+  const [draggedTicker, setDraggedTicker] = useState<string | null>(null);
+  const cards = orderMarketCards(market, cardOrder);
   if (cards.length === 0) return <div className="empty-inline">等待每日行情資料更新。</div>;
+  const reorder = (targetTicker: string) => {
+    if (!draggedTicker || draggedTicker === targetTicker) return;
+    onCardOrderChange(moveMarketCard(cards.map(item => item.ticker), draggedTicker, targetTicker));
+    setDraggedTicker(null);
+  };
   return (
-    <div className="index-bar">
-      {cards.map(item => (
-        <article className="idx-card" key={item.ticker}>
-          <div className="idx-name">{item.name}</div>
-          <div className={`idx-val ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</div>
-          <div className={`idx-chg ${valueClass(item.percentChange)}`}>
-            {item.change === null ? "--" : `${item.change > 0 ? "+" : ""}${formatNumber(item.change)}`} ({returnText(item.percentChange)})
-          </div>
-          <div className="idx-ts">{item.quoteDate || "--"}</div>
-        </article>
-      ))}
+    <div className="market-card-zone">
+      <div className="market-card-controls"><span>按住卡片拖曳即可排序；此瀏覽器會記住你的順序。</span><button type="button" className="sort-reset" onClick={() => onCardOrderChange([])}>重設排序</button></div>
+      <div className="index-bar" aria-label="可拖曳排序的市場行情卡片">
+        {cards.map(item => (
+          <article className={`idx-card ${draggedTicker === item.ticker ? "dragging" : ""}`} key={item.ticker} draggable onDragStart={() => setDraggedTicker(item.ticker)} onDragOver={event => event.preventDefault()} onDrop={() => reorder(item.ticker)} onDragEnd={() => setDraggedTicker(null)}>
+            <span className="idx-drag-handle" aria-hidden="true">⋮⋮</span>
+            <div className="idx-name">{item.name}</div>
+            <div className={`idx-val ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</div>
+            <div className={`idx-chg ${valueClass(item.percentChange)}`}>
+              {item.change === null ? "--" : `${item.change > 0 ? "+" : ""}${formatNumber(item.change)}`} ({returnText(item.percentChange)})
+            </div>
+            <div className="idx-ts">{item.quoteDate || "--"}</div>
+          </article>
+        ))}
+      </div>
     </div>
   );
 }
@@ -147,6 +168,10 @@ function MarketCards({ market }: { market: Array<{ ticker: string; name: string;
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabKey>(initialTabFromUrl);
   const [now, setNow] = useState(() => new Date());
+  const [marketCardOrder, setMarketCardOrder] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try { return JSON.parse(window.localStorage.getItem("investment-dashboard-market-order") ?? "[]") as string[]; } catch { return []; }
+  });
   const { data, isLoading, isFetching, refetch } = trpc.dashboard.get.useQuery(undefined, { refetchInterval: 60_000 });
 
   useEffect(() => {
@@ -154,13 +179,19 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, []);
 
+  const saveMarketCardOrder = (nextOrder: string[]) => {
+    setMarketCardOrder(nextOrder);
+    if (nextOrder.length === 0) window.localStorage.removeItem("investment-dashboard-market-order");
+    else window.localStorage.setItem("investment-dashboard-market-order", JSON.stringify(nextOrder));
+  };
+
   const weeklyRanking = useMemo(() => {
     const allFunds = [...(data?.domesticFunds ?? []), ...(data?.foreignFunds ?? [])];
     return allFunds.sort((left, right) => (right.perf.week ?? -Infinity) - (left.perf.week ?? -Infinity));
   }, [data]);
 
-  const sidebarMarket = data?.market.slice(0, 4) ?? [];
-  const sidebarStocks = data?.market.slice(6, 8) ?? [];
+  const sidebarMarket = data?.market.filter(item => item.showAsCard).slice(0, 4) ?? [];
+  const sidebarStocks = data?.market.filter(item => !item.showAsCard) ?? [];
   const sidebarDomestic = data?.domesticFunds.filter(fund => ["NOM006", "ALI006", "NOM008"].includes(fund.code ?? "")) ?? [];
   const sidebarForeign = data?.foreignFunds.slice(0, 2) ?? [];
   const dashboardStatus = data?.lastRefresh?.status === "failed" ? "更新失敗" : data?.lastRefresh?.status === "partial" ? "部分資料更新" : "每日自動更新";
@@ -205,7 +236,7 @@ export default function Home() {
         {isLoading ? <div className="loading-state">正在讀取公開資料庫…</div> : null}
 
         {activeTab === "asia" && <section className="panel active">
-          <MarketCards market={data?.market ?? []} />
+          <MarketCards market={data?.market ?? []} cardOrder={marketCardOrder} onCardOrderChange={saveMarketCardOrder} />
           <div className="sec-title">台股個股 / 全球指數</div>
           <div className="table-wrap"><table className="dtable"><thead><tr><th>代碼</th><th className="left">名稱</th><th>現價</th><th>漲跌</th><th>漲跌幅</th><th>更新時間</th><th>狀態</th></tr></thead><tbody>
             {(data?.market ?? []).map(item => <tr key={item.ticker}><td><span className="t-code">{item.ticker}</span></td><td className="left"><span className="t-name">{item.name}</span></td><td><span className={`t-price ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</span></td><td><span className={`t-chg ${valueClass(item.percentChange)}`}>{item.change === null ? "--" : `${item.change > 0 ? "+" : ""}${formatNumber(item.change)}`}</span></td><td><span className={`badge badge-${valueClass(item.percentChange)}`}>{returnText(item.percentChange)}</span></td><td className="t-ts"><span className="ts-dot live" />{item.quoteDate || "--"}</td><td><span className="badge badge-live">已更新</span></td></tr>)}
@@ -216,7 +247,7 @@ export default function Home() {
 
         {activeTab === "foreign" && <section className="panel active"><div className="sec-title">國際基金 — 最新淨值與多期間報酬</div><p className="fund-hint">報酬率以基金原幣淨值計算；尚未取得的期間顯示「--」。</p><div className="fund-grid">{(data?.foreignFunds ?? []).map(fund => <FundCard key={fund.id} fund={fund} />)}</div></section>}
 
-        {activeTab === "performance" && <section className="panel active"><MarketCards market={data?.market ?? []} /><div className="sec-title">一週與一年漲跌幅排行</div><div className="table-wrap"><table className="dtable"><thead><tr><th>代碼</th><th className="left">名稱</th><th>淨值</th><th>日期</th><th>一週漲跌幅</th><th>一年漲跌幅</th><th>年度排名</th></tr></thead><tbody>{weeklyRanking.map(fund => <tr key={fund.id}><td><span className="t-code">{fund.code || "境外"}</span></td><td className="left"><span className="t-name">{fund.name}</span></td><td><span className="t-price">{fund.currency === "TWD" ? "" : `${fund.currency} `}{formatNumber(fund.nav, fund.currency === "TWD" ? 2 : 4)}</span></td><td className="t-ts">{formatDate(fund.asOfDate)}</td><td><span className={`badge badge-${valueClass(fund.perf.week)}`}>{returnText(fund.perf.week)}</span></td><td><span className={`badge badge-${valueClass(fund.perf.year)}`}>{returnText(fund.perf.year)}</span></td><td className="t-ts">{fund.annualRank ? `${fund.annualRank} / ${fund.annualTotal}` : "--"}</td></tr>)}</tbody></table></div></section>}
+        {activeTab === "performance" && <section className="panel active"><MarketCards market={data?.market ?? []} cardOrder={marketCardOrder} onCardOrderChange={saveMarketCardOrder} /><div className="sec-title">一週與一年漲跌幅排行</div><div className="table-wrap"><table className="dtable"><thead><tr><th>代碼</th><th className="left">名稱</th><th>淨值</th><th>日期</th><th>一週漲跌幅</th><th>一年漲跌幅</th><th>年度排名</th></tr></thead><tbody>{weeklyRanking.map(fund => <tr key={fund.id}><td><span className="t-code">{fund.code || "境外"}</span></td><td className="left"><span className="t-name">{fund.name}</span></td><td><span className="t-price">{fund.currency === "TWD" ? "" : `${fund.currency} `}{formatNumber(fund.nav, fund.currency === "TWD" ? 2 : 4)}</span></td><td className="t-ts">{formatDate(fund.asOfDate)}</td><td><span className={`badge badge-${valueClass(fund.perf.week)}`}>{returnText(fund.perf.week)}</span></td><td><span className={`badge badge-${valueClass(fund.perf.year)}`}>{returnText(fund.perf.year)}</span></td><td className="t-ts">{fund.annualRank ? `${fund.annualRank} / ${fund.annualTotal}` : "--"}</td></tr>)}</tbody></table></div></section>}
 
         {activeTab === "news" && <section className="panel active"><div className="sec-title">財經即時新聞</div><div className="news-list">{(data?.news ?? []).length === 0 ? <div className="empty-inline">等待每日 RSS 更新。</div> : (data?.news ?? []).map(item => <article className="news-item" key={item.id}><a className="news-title" href={item.url} target="_blank" rel="noreferrer">{item.title}</a>{item.summary ? <p className="news-body">{item.summary}</p> : null}<div className="news-meta"><span>{formatDateTime(item.publishedAt)}</span><span>{item.source}</span></div></article>)}</div></section>}
       </main>
