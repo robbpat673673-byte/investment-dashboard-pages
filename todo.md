@@ -136,4 +136,4 @@
 
 ## 發布版本留痕
 
-- [ ] 將本輪正式 checkpoint 版本號寫入 `observatory_verification.md`
+- [x] 將本輪正式 checkpoint 版本號寫入 `observatory_verification.md`
