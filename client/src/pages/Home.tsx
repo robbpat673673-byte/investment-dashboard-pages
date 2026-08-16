@@ -3,9 +3,10 @@ import { filterFunds, type FundScope } from "@/lib/fundFilters";
 import { moveMarketCard, orderMarketCards } from "@/lib/marketCardOrder";
 import { FAVORITE_FUNDS_STORAGE_KEY, createFavoriteExport, parseFavoriteFundIds, parseFavoriteImport, sortFundsByReturn, toggleFavoriteFundId, type FundSortKey } from "@/lib/fundPreferences";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { useEffect, useMemo, useState } from "react";
+import { ObservatoryPanel } from "@/components/ObservatoryPanel";
+import React, { useEffect, useMemo, useState } from "react";
 
-type TabKey = "asia" | "domestic" | "foreign" | "performance" | "news";
+type TabKey = "asia" | "domestic" | "foreign" | "performance" | "news" | "observatory";
 
 const tabs: Array<{ key: TabKey; label: string }> = [
   { key: "asia", label: "全球市場" },
@@ -13,6 +14,7 @@ const tabs: Array<{ key: TabKey; label: string }> = [
   { key: "foreign", label: "國際基金" },
   { key: "performance", label: "漲跌幅" },
   { key: "news", label: "財經即時新聞" },
+  { key: "observatory", label: "觀測站" },
 ];
 
 function initialTabFromUrl(): TabKey {
@@ -292,6 +294,7 @@ export default function Home() {
       {(activeTab === "domestic" || activeTab === "foreign") && <section className="panel active"><FundBrowsePanel funds={filteredFunds} favoriteFunds={favoriteFunds} query={fundQuery} scope={fundScope} currency={fundCurrency} sortKey={fundSortKey} currencies={availableCurrencies} importMessage={favoriteImportMessage} onQueryChange={setFundQuery} onScopeChange={setFundScope} onCurrencyChange={setFundCurrency} onSortChange={setFundSortKey} onToggleFavorite={id => saveFavoriteFundIds(toggleFavoriteFundId(favoriteFundIds, id))} onClearFavorites={() => saveFavoriteFundIds([])} onExportFavorites={exportFavorites} onImportFavorites={importFavorites} /></section>}
       {activeTab === "performance" && <section className="panel active"><MarketCards market={data?.market ?? []} cardOrder={marketCardOrder} onCardOrderChange={saveMarketCardOrder} /><div className="sec-title">一週、一月、三月、YTD 與一年漲跌幅排行</div><div className="table-wrap"><table className="dtable"><thead><tr><th>代碼</th><th className="left">名稱</th><th>淨值</th><th>日期</th><th>一週</th><th>近 1 月</th><th>近 3 月</th><th>YTD</th><th>一年</th><th>年度排名</th></tr></thead><tbody>{weeklyRanking.map(fund => <tr key={fund.id}><td><span className="t-code">{fund.code || "境外"}</span></td><td className="left"><span className="t-name">{fund.name}</span></td><td><span className="t-price">{fund.currency === "TWD" ? "" : `${fund.currency} `}{formatNumber(fund.nav, fund.currency === "TWD" ? 2 : 4)}</span></td><td className="t-ts">{formatDate(fund.asOfDate)}</td><td><span className={`badge badge-${valueClass(fund.perf.week)}`}>{returnText(fund.perf.week)}</span></td><td><span className={`badge badge-${valueClass(fund.perf.month)}`}>{returnText(fund.perf.month)}</span></td><td><span className={`badge badge-${valueClass(fund.perf.quarter)}`}>{returnText(fund.perf.quarter)}</span></td><td><span className={`badge badge-${valueClass(fund.perf.ytd)}`}>{returnText(fund.perf.ytd)}</span></td><td><span className={`badge badge-${valueClass(fund.perf.year)}`}>{returnText(fund.perf.year)}</span></td><td className="t-ts">{fund.annualRank ? `${fund.annualRank} / ${fund.annualTotal}` : "--"}</td></tr>)}</tbody></table></div></section>}
       {activeTab === "news" && <section className="panel active"><div className="sec-title">財經即時新聞</div><div className="news-list">{(data?.news ?? []).length === 0 ? <div className="empty-inline">等待每日 RSS 更新。</div> : (data?.news ?? []).map(item => <article className="news-item" key={item.id}><a className="news-title" href={item.url} target="_blank" rel="noreferrer">{item.title}</a>{item.summary ? <p className="news-body">{item.summary}</p> : null}<div className="news-meta"><span>{formatDateTime(item.publishedAt)}</span><span>{item.source}</span></div></article>)}</div></section>}
+      {activeTab === "observatory" && <ObservatoryPanel data={data?.observatory} />}
     </main>
   </div>;
 }

@@ -13,6 +13,7 @@ import {
 } from "../../drizzle/schema";
 import { calculatePerformances, cleanText, parseHistoryPayload, safeUrl, sampleHistory, shiftMonths, type NavPoint } from "./dashboardCalculations";
 import { buildPublicFundDetail } from "./fundDetail";
+import { buildObservatorySnapshot } from "./observatory";
 
 type FundConfig = {
   fundType: "domestic" | "foreign";
@@ -404,20 +405,24 @@ export async function getPublicDashboardData() {
   const news = await db.select().from(newsItems).orderBy(desc(newsItems.publishedAt), desc(newsItems.fetchedAt)).limit(12);
   const latestRun = (await db.select().from(refreshRuns).orderBy(desc(refreshRuns.startedAt)).limit(1))[0] ?? null;
 
+  const publicMarket = quotes.map(quote => ({
+    ticker: quote.ticker,
+    name: quote.name,
+    price: decimal(quote.price),
+    change: decimal(quote.change),
+    percentChange: decimal(quote.percentChange),
+    quoteDate: quote.quoteDate,
+    showAsCard: quote.showAsCard,
+  }));
+  const publicNews = news.map(item => ({ ...item, id: Number(item.id) }));
+
   return {
     domesticFunds: allFunds.filter(fund => fund.fundType === "domestic").map(toFund),
     foreignFunds: allFunds.filter(fund => fund.fundType === "foreign").map(toFund),
-    market: quotes.map(quote => ({
-      ticker: quote.ticker,
-      name: quote.name,
-      price: decimal(quote.price),
-      change: decimal(quote.change),
-      percentChange: decimal(quote.percentChange),
-      quoteDate: quote.quoteDate,
-      showAsCard: quote.showAsCard,
-    })),
-    news: news.map(item => ({ ...item, id: Number(item.id) })),
+    market: publicMarket,
+    news: publicNews,
     lastRefresh: latestRun ? { status: latestRun.status, startedAt: latestRun.startedAt, finishedAt: latestRun.finishedAt, fundsUpdated: latestRun.fundsUpdated, newsUpdated: latestRun.newsUpdated } : null,
+    observatory: buildObservatorySnapshot(publicMarket, publicNews, latestRun?.finishedAt ?? null),
   };
 }
 
