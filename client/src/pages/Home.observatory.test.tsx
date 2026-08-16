@@ -17,6 +17,14 @@ const mutationState = vi.hoisted(() => ({
   calls: [] as unknown[],
 }));
 
+const exportState = vi.hoisted(() => ({ download: vi.fn(), print: vi.fn(() => false) }));
+
+vi.mock("@/lib/observatoryExport", () => ({
+  downloadMarkdown: exportState.download,
+  observatoryMessagesToMarkdown: () => "# 測試匯出",
+  openPrintPdfPreview: exportState.print,
+}));
+
 const summaryState = vi.hoisted(() => ({
   mode: "success" as "success" | "error",
   generated: null as null | { id: number; summaryDate: string; generatedAt: string; snapshotAsOf: string; content: string; sources: unknown[] },
@@ -92,6 +100,9 @@ afterEach(() => {
   summaryState.refetch.mockReset();
   window.localStorage.clear();
   window.history.replaceState({}, "", "/");
+  exportState.download.mockReset();
+  exportState.print.mockReset();
+  exportState.print.mockReturnValue(false);
 });
 
 describe("Home 觀測站", () => {
@@ -102,10 +113,31 @@ describe("Home 觀測站", () => {
     expect(screen.getByRole("group", { name: "新聞分類" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "市場" }));
     expect(screen.getAllByText("CNBC 市場測試標題").length).toBeGreaterThan(0);
+    const keywordInput = screen.getByRole("textbox", { name: "搜尋財經新聞關鍵字" });
+    fireEvent.change(keywordInput, { target: { value: "CNBC" } });
+    expect(screen.getAllByText("CNBC 市場測試標題").length).toBeGreaterThan(0);
+    expect(screen.queryByText("華爾街日報市場測試標題")).toBeNull();
+    fireEvent.change(keywordInput, { target: { value: "" } });
     const sourceSelect = screen.getByRole("combobox", { name: "篩選財經新聞來源" });
     fireEvent.change(sourceSelect, { target: { value: "華爾街日報・市場" } });
     expect(screen.getAllByText("華爾街日報市場測試標題").length).toBeGreaterThan(0);
     expect(screen.queryByText("CNBC 市場測試標題")).toBeNull();
+  });
+
+  it("觀測站提供警示快捷門檻與財經小智匯出控制", () => {
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "觀測站" }));
+    expect(screen.getByRole("group", { name: "警示門檻快捷設定" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /保守/ }));
+    expect(screen.getByText(/市場變動門檻/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "下載 Markdown" })).toBeTruthy();
+    const markdownButton = screen.getByRole("button", { name: "下載 Markdown" });
+    fireEvent.click(markdownButton);
+    expect(exportState.download).toHaveBeenCalled();
+    const pdfButton = screen.getByRole("button", { name: "列印／匯出 PDF" });
+    fireEvent.click(pdfButton);
+    expect(exportState.print).toHaveBeenCalled();
+    expect(screen.getByRole("status").textContent).toContain("瀏覽器封鎖了列印視窗");
   });
 
   it("可由財經即時新聞旁的頁籤切換，並渲染摘要、新聞來源與風險揭露", () => {

@@ -156,3 +156,22 @@ html.dark .observatory-summary-actions .button{color:#07101e}
   .news-filter-bar select { min-width: 0; width: 100%; }
   .news-disclosure { font-size: 0.78rem; }
 }
+
+
+.news-keyword-field { flex: 1 1 14rem; }
+.news-keyword-field input { min-width: 12rem; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 0.45rem; background: var(--background); color: var(--foreground); }
+.news-category-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.filter-chip { border: 1px solid var(--border); border-radius: 999px; padding: 0.35rem 0.65rem; background: transparent; color: var(--muted-foreground); cursor: pointer; }
+.filter-chip.active, .filter-chip:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--foreground); }
+.observatory-alert-shortcuts { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; margin: 0.75rem 0 1rem; }
+.observatory-alert-shortcuts > span { color: var(--muted-foreground); font-size: 0.8rem; font-weight: 700; }
+.observatory-alert-shortcuts button, .observatory-export-actions button { border: 1px solid var(--border); border-radius: 0.45rem; padding: 0.4rem 0.6rem; background: var(--background); color: var(--foreground); cursor: pointer; }
+.observatory-alert-shortcuts button:hover, .observatory-export-actions button:hover { border-color: var(--primary); color: var(--primary); }
+.observatory-export-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; margin-top: 0.85rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+.observatory-export-actions strong { margin-right: auto; font-size: 0.85rem; }
+@media (max-width: 600px) {
+  .news-keyword-field input { min-width: 0; width: 100%; }
+  .observatory-alert-shortcuts, .observatory-export-actions { align-items: stretch; flex-direction: column; }
+  .observatory-alert-shortcuts button, .observatory-export-actions button { width: 100%; }
+  .observatory-export-actions strong { margin-right: 0; }
+}
