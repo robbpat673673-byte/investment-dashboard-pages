@@ -139,3 +139,20 @@ html.dark .observatory-summary-actions .button{color:#07101e}
   .observatory-history-hero .button { align-self: flex-start; }
   .observatory-alert-history-card-head { align-items: flex-start; flex-direction: column; gap: 0.25rem; }
 }
+
+
+/* Multi-source financial news */
+.news-disclosure { margin: -0.35rem 0 1rem; color: var(--muted-foreground); font-size: 0.82rem; line-height: 1.65; }
+.news-filter-bar { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; padding: 0.75rem 0.9rem; border: 1px solid var(--border); border-radius: 0.75rem; background: color-mix(in srgb, var(--card) 88%, transparent); color: var(--muted-foreground); }
+.news-filter-bar label { display: grid; gap: 0.3rem; font-size: 0.78rem; font-weight: 700; color: var(--foreground); }
+.news-filter-bar select { min-width: 15rem; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 0.45rem; background: var(--background); color: var(--foreground); }
+.news-highlights { margin-bottom: 1rem; padding: 0.9rem; border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--border)); border-radius: 0.8rem; background: color-mix(in srgb, var(--primary) 7%, var(--card)); }
+.news-highlight { display: grid; gap: 0.25rem; padding: 0.65rem 0; color: var(--foreground); text-decoration: none; border-bottom: 1px solid var(--border); }
+.news-highlight:last-child { border-bottom: 0; }
+.news-highlight strong { line-height: 1.45; }
+.news-highlight span { color: var(--muted-foreground); font-size: 0.78rem; }
+@media (max-width: 600px) {
+  .news-filter-bar { align-items: stretch; flex-direction: column; }
+  .news-filter-bar select { min-width: 0; width: 100%; }
+  .news-disclosure { font-size: 0.78rem; }
+}

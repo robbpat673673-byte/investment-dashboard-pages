@@ -85,7 +85,11 @@ const MARKET_CONFIG = [
   { ticker: "^TYX", name: "美國 30 年期公債殖利率", showAsCard: false, sortOrder: 20 },
 ];
 
-const RSS_SOURCES = [
+export const RSS_SOURCES = [
+  ["https://feeds.a.dj.com/rss/RSSMarketsMain.xml", "華爾街日報・市場"],
+  ["https://www.cnbc.com/id/100003114/device/rss/rss.html", "CNBC・財經市場"],
+  ["https://feeds.marketwatch.com/marketwatch/topstories/", "MarketWatch・焦點"],
+  ["https://www.ft.com/?format=rss", "Financial Times・財經"],
   ["https://news.google.com/rss/search?q=%E5%8F%B0%E7%81%A3+%E8%B2%A1%E7%B6%93+%E8%82%A1%E5%B8%82&hl=zh-TW&gl=TW&ceid=TW:zh-Hant", "Google 新聞・台灣財經"],
   ["https://news.google.com/rss/search?q=%E5%85%A8%E7%90%83+%E5%B8%82%E5%A0%B4+%E7%BE%8E%E8%82%A1+%E8%B2%A1%E7%B6%93&hl=zh-TW&gl=TW&ceid=TW:zh-Hant", "Google 新聞・全球市場"],
   ["https://news.google.com/rss/search?q=%E5%9F%BA%E9%87%91+%E5%82%B5%E5%88%B8+%E5%8C%AF%E7%8E%87&hl=zh-TW&gl=TW&ceid=TW:zh-Hant", "Google 新聞・基金市場"],
@@ -203,11 +207,11 @@ async function fetchNews() {
   const items: Array<{ title: string; summary: string; url: string; source: string; publishedAt: Date | null }> = [];
   const seen = new Set<string>();
   for (const [url, source] of RSS_SOURCES) {
-    if (items.length >= 12) break;
+    if (items.length >= 24) break;
     try {
       const xml = await fetchText(url);
       for (const block of xml.match(/<item\b[\s\S]*?<\/item>/gi) ?? []) {
-        if (items.length >= 12) break;
+        if (items.length >= 24) break;
         const title = cleanText(getXmlTag(block, "title"), 240);
         const itemUrl = safeUrl(cleanText(getXmlTag(block, "link"), 1_500));
         if (!title || !itemUrl || seen.has(title)) continue;

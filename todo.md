@@ -137,3 +137,14 @@
 ## 發布版本留痕
 
 - [x] 將本輪正式 checkpoint 版本號寫入 `observatory_verification.md`
+
+
+## 本次擴充：多來源財經即時新聞聚合
+
+- [x] 驗證 WSJ、CNBC、MarketWatch、Financial Times 與 Yahoo Finance RSS；記錄 Reuters 一般新聞 feed 受限且未納入正式來源
+- [x] 建立多來源 RSS 抓取、解析、重試、逾時、去重與來源失敗降級流程
+- [x] 僅保存合法取得的標題、摘要、發布時間、來源與原文連結，不繞過登入或付費牆
+- [x] 在財經即時新聞頁加入來源篩選、分類、時間排序與快速掌握重點區塊
+- [x] 為多來源新聞資料與前端互動補上 Vitest 測試
+- [x] 完成桌面／375px 響應式驗證並更新新聞來源與限制文件
+- [x] 保存新的正式 checkpoint

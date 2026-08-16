@@ -41,7 +41,7 @@ vi.mock("@/lib/trpc", () => ({
             domesticFunds: [],
             foreignFunds: [],
             market: [],
-            news: [],
+            news: [{ id: 1, title: "華爾街日報市場測試標題", summary: "WSJ 公開摘要測試。", url: "https://example.com/wsj", source: "華爾街日報・市場", publishedAt: "2026-08-16T04:00:00.000Z" }, { id: 2, title: "CNBC 市場測試標題", summary: "CNBC 公開摘要測試。", url: "https://example.com/cnbc", source: "CNBC・財經市場", publishedAt: "2026-08-16T05:00:00.000Z" }, { id: 3, title: "MarketWatch 測試標題", summary: "MarketWatch 公開摘要測試。", url: "https://example.com/mw", source: "MarketWatch・焦點", publishedAt: "2026-08-16T03:00:00.000Z" }],
             lastRefresh: null,
             observatory: {
               asOf: "2026-08-16T04:00:00.000Z",
@@ -95,6 +95,19 @@ afterEach(() => {
 });
 
 describe("Home 觀測站", () => {
+  it("多來源新聞頁顯示快速掌握並支援來源篩選", () => {
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "財經即時新聞" }));
+    expect(screen.getByText("快速掌握")).toBeTruthy();
+    expect(screen.getByRole("group", { name: "新聞分類" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "市場" }));
+    expect(screen.getAllByText("CNBC 市場測試標題").length).toBeGreaterThan(0);
+    const sourceSelect = screen.getByRole("combobox", { name: "篩選財經新聞來源" });
+    fireEvent.change(sourceSelect, { target: { value: "華爾街日報・市場" } });
+    expect(screen.getAllByText("華爾街日報市場測試標題").length).toBeGreaterThan(0);
+    expect(screen.queryByText("CNBC 市場測試標題")).toBeNull();
+  });
+
   it("可由財經即時新聞旁的頁籤切換，並渲染摘要、新聞來源與風險揭露", () => {
     render(<Home />);
     fireEvent.click(screen.getByRole("button", { name: "觀測站" }));
