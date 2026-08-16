@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import {
   fundNavHistory,
@@ -10,10 +10,13 @@ import {
   marketQuotes,
   newsItems,
   refreshRuns,
+  observatoryDailySummaries,
 } from "../../drizzle/schema";
 import { calculatePerformances, cleanText, parseHistoryPayload, safeUrl, sampleHistory, shiftMonths, type NavPoint } from "./dashboardCalculations";
 import { buildPublicFundDetail } from "./fundDetail";
 import { buildObservatorySnapshot } from "./observatory";
+
+const MACRO_HISTORY_TICKERS = ["TWD=X", "^IRX", "^TNX", "^TYX"] as const;
 
 type FundConfig = {
   fundType: "domestic" | "foreign";
@@ -179,14 +182,16 @@ async function fetchFundDistributions(fund: { mcode: string; fundType: "domestic
 }
 
 async function fetchMarketHistory(ticker: string): Promise<NavPoint[]> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=2y&interval=1d`;
+  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=2y&interval=1d&events=history`;
   const payload = JSON.parse(await fetchText(url)) as { chart?: { result?: Array<{ timestamp?: number[]; indicators?: { quote?: Array<{ close?: Array<number | null> }> } }> } };
   const chart = payload.chart?.result?.[0];
   const closes = chart?.indicators?.quote?.[0]?.close ?? [];
   const timestamps = chart?.timestamp ?? [];
-  return closes.map((nav, index) => ({ nav, timestamp: timestamps[index] }))
+  const series = closes.map((nav, index) => ({ nav, timestamp: timestamps[index] }))
     .filter((point): point is { nav: number; timestamp: number } => typeof point.nav === "number" && Number.isFinite(point.nav) && typeof point.timestamp === "number")
     .map(point => ({ date: new Date(point.timestamp * 1000).toISOString().slice(0, 10), nav: point.nav }));
+  if (series.length < 2) throw new Error("歷史行情回傳筆數不足");
+  return series;
 }
 
 function getXmlTag(block: string, tagName: string): string {
@@ -345,13 +350,15 @@ export async function refreshDashboardData() {
     }
   }
 
-  try {
-    const benchmarkHistory = await fetchMarketHistory("^GSPC");
-    for (let index = 0; index < benchmarkHistory.length; index += 250) {
-      await db.insert(marketHistory).values(benchmarkHistory.slice(index, index + 250).map(point => ({ ticker: "^GSPC", pointDate: databaseDate(point.date), close: point.nav.toFixed(6), source: "Yahoo Finance" }))).onDuplicateKeyUpdate({ set: { close: sql`VALUES(close)`, sourcedAt: new Date() } });
+  for (const ticker of ["^GSPC", ...MACRO_HISTORY_TICKERS]) {
+    try {
+      const series = await fetchMarketHistory(ticker);
+      for (let index = 0; index < series.length; index += 250) {
+        await db.insert(marketHistory).values(series.slice(index, index + 250).map(point => ({ ticker, pointDate: databaseDate(point.date), close: point.nav.toFixed(6), source: "Yahoo Finance" }))).onDuplicateKeyUpdate({ set: { close: sql`VALUES(close)`, sourcedAt: new Date() } });
+      }
+    } catch (error) {
+      errors.push(`${ticker} 歷史：${error instanceof Error ? error.message : "更新失敗"}`);
     }
-  } catch (error) {
-    errors.push(`S&P 500 歷史：${error instanceof Error ? error.message : "更新失敗"}`);
   }
 
   const status = errors.length === 0 ? "success" : fundsUpdated > 0 || fetchedNews.length > 0 ? "partial" : "failed";
@@ -418,6 +425,8 @@ export async function getPublicDashboardData() {
   const quotes = await db.select().from(marketQuotes).orderBy(marketQuotes.sortOrder);
   const news = await db.select().from(newsItems).orderBy(desc(newsItems.publishedAt), desc(newsItems.fetchedAt)).limit(12);
   const latestRun = (await db.select().from(refreshRuns).orderBy(desc(refreshRuns.startedAt)).limit(1))[0] ?? null;
+  const macroRows = await db.select({ ticker: marketHistory.ticker, pointDate: marketHistory.pointDate, close: marketHistory.close }).from(marketHistory).where(or(...MACRO_HISTORY_TICKERS.map(ticker => eq(marketHistory.ticker, ticker)))).orderBy(marketHistory.pointDate);
+  const latestSummary = (await db.select({ summaryDate: observatoryDailySummaries.summaryDate, generatedAt: observatoryDailySummaries.generatedAt, content: observatoryDailySummaries.content }).from(observatoryDailySummaries).orderBy(desc(observatoryDailySummaries.summaryDate)).limit(1))[0] ?? null;
 
   const publicMarket = quotes.map(quote => ({
     ticker: quote.ticker,
@@ -429,6 +438,7 @@ export async function getPublicDashboardData() {
     showAsCard: quote.showAsCard,
   }));
   const publicNews = news.map(item => ({ ...item, id: Number(item.id) }));
+  const publicMacroHistory = macroRows.map(row => ({ ticker: row.ticker, date: row.pointDate instanceof Date ? row.pointDate.toISOString().slice(0, 10) : String(row.pointDate).slice(0, 10), close: Number(row.close) }));
 
   return {
     domesticFunds: allFunds.filter(fund => fund.fundType === "domestic").map(toFund),
@@ -436,7 +446,7 @@ export async function getPublicDashboardData() {
     market: publicMarket,
     news: publicNews,
     lastRefresh: latestRun ? { status: latestRun.status, startedAt: latestRun.startedAt, finishedAt: latestRun.finishedAt, fundsUpdated: latestRun.fundsUpdated, newsUpdated: latestRun.newsUpdated } : null,
-    observatory: buildObservatorySnapshot(publicMarket, publicNews, latestRun?.finishedAt ?? null),
+    observatory: buildObservatorySnapshot(publicMarket, publicNews, latestRun?.finishedAt ?? null, publicMacroHistory, latestSummary),
   };
 }
 

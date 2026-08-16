@@ -55,3 +55,23 @@ html.dark .observatory-summary-actions .button{color:#07101e}
 .observatory-quick-prompts button:active { transform: scale(0.98); }
 .observatory-quick-prompts button:disabled { cursor: wait; opacity: 0.55; }
 @media (max-width: 700px) { .observatory-quick-prompts > div { display: grid; grid-template-columns: 1fr; } .observatory-quick-prompts button { width: 100%; } }
+
+/* Observatory macro charts and browser alerts */
+.observatory-chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.observatory-chart-card { min-width: 0; padding: 1rem; border: 1px solid var(--border); border-radius: 0.9rem; background: var(--card); color: var(--card-foreground); }
+.observatory-chart-card > strong, .observatory-chart-card > small { display: block; margin-bottom: 0.35rem; }
+.observatory-chart-legend { display: flex; flex-wrap: wrap; gap: 0.8rem; margin: 0.35rem 0 0.5rem; color: var(--muted-foreground); font-size: 0.75rem; }
+.observatory-chart-legend span::before { content: ""; display: inline-block; width: 0.55rem; height: 0.55rem; margin-right: 0.3rem; border-radius: 999px; background: currentColor; }
+.observatory-chart-legend span:nth-child(1) { color: #7c3aed; }
+.observatory-chart-legend span:nth-child(2) { color: #2563eb; }
+.observatory-chart-legend span:nth-child(3) { color: #0891b2; }
+.observatory-alert-section { margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: 0.9rem; background: var(--muted); color: var(--foreground); }
+.observatory-alert-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-top: 0.75rem; }
+.observatory-alert-controls label { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.84rem; }
+.observatory-alert-controls input[type="number"] { width: 4.6rem; padding: 0.35rem 0.45rem; border: 1px solid var(--border); border-radius: 0.45rem; background: var(--background); color: var(--foreground); }
+.observatory-alert-message, .observatory-alert-help { margin: 0.7rem 0 0; color: var(--muted-foreground); font-size: 0.82rem; }
+@media (max-width: 700px) {
+  .observatory-chart-grid { grid-template-columns: 1fr; }
+  .observatory-alert-controls { align-items: stretch; flex-direction: column; }
+  .observatory-alert-controls label, .observatory-alert-controls button { width: 100%; justify-content: space-between; }
+}

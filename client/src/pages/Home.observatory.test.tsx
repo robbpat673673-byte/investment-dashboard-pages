@@ -3,6 +3,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 
+Object.defineProperty(globalThis, "ResizeObserver", {
+  writable: true,
+  value: class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+});
+
 const mutationState = vi.hoisted(() => ({
   mode: "success" as "success" | "error" | "throttle",
   calls: [] as unknown[],
@@ -41,6 +50,8 @@ vi.mock("@/lib/trpc", () => ({
               highlights: [{ ticker: "^TWII", name: "加權指數", price: 23100.1, percentChange: 0.42, quoteDate: "2026-08-16" }],
               headlines: [{ title: "觀測站測試新聞", source: "Google 新聞・台灣財經", url: "https://example.com/news", publishedAt: "2026-08-16T03:30:00.000Z" }],
               sources: [{ label: "市場行情", detail: "Yahoo Finance 公開行情資料。", url: "https://finance.yahoo.com/" }],
+              macroHistory: [{ ticker: "TWD=X", date: "2026-08-15", close: 32.1 }, { ticker: "^IRX", date: "2026-08-15", close: 5.2 }, { ticker: "^TNX", date: "2026-08-15", close: 4.3 }, { ticker: "^TYX", date: "2026-08-15", close: 4.9 }],
+              dailySummary: null,
             },
           },
         }),
@@ -52,7 +63,7 @@ vi.mock("@/lib/trpc", () => ({
           isPending: false,
           mutate: (payload: unknown) => {
             mutationState.calls.push(payload);
-            if (mutationState.mode === "success") options.onSuccess?.({ answer: "## 事實\n測試成功回覆。來源：Yahoo Finance" });
+            if (mutationState.mode === "success") options.onSuccess?.({ answer: JSON.stringify(payload).includes("分析今日摘要") ? "## 事實\n摘要日期：2026-08-16；來源：每日財經摘要\n## 限制與風險\n測試限制。" : "## 事實\n測試成功回覆。來源：Yahoo Finance" });
             else if (mutationState.mode === "throttle") options.onError?.(new Error("觀測站問答已達暫時使用上限，請稍後再試。"));
             else options.onError?.(new Error("測試失敗"));
           },
@@ -89,9 +100,21 @@ describe("Home 觀測站", () => {
 
     expect(screen.getByRole("heading", { name: "觀測站" })).toBeTruthy();
     expect(screen.getByText("重點行情與總經指標")).toBeTruthy();
+    expect(screen.getByText("美國公債殖利率曲線")).toBeTruthy();
+    expect(screen.getByText("美元／台幣歷史走勢")).toBeTruthy();
+    expect(screen.getByText("異常通知設定")).toBeTruthy();
     expect(screen.getByText("觀測站測試新聞")).toBeTruthy();
     expect(screen.getByText("資料來源與使用限制")).toBeTruthy();
     expect(screen.getByText(/本頁內容為資料整理與一般性研究觀察/)).toBeTruthy();
+  });
+
+  it("分析今日摘要快速提問會被送入財經小智", async () => {
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "觀測站" }));
+    fireEvent.click(screen.getByRole("button", { name: "分析今日摘要" }));
+    await waitFor(() => expect(screen.getByText(/摘要日期：2026-08-16/)).toBeTruthy());
+    expect(screen.getByText(/測試限制/)).toBeTruthy();
+    expect(JSON.stringify(mutationState.calls[0])).toContain("分析今日摘要");
   });
 
   it("財經小智問答成功時顯示回覆並傳送裁切後的訊息", async () => {

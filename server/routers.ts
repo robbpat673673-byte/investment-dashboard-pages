@@ -47,7 +47,7 @@ export const appRouter = router({
       const completion = await invokeLLM({
         model: "gpt-5-mini",
         messages: [
-          { role: "system", content: observatorySystemPrompt(dashboard.observatory.context) },
+          { role: "system", content: observatorySystemPrompt(dashboard.observatory.context, dashboard.observatory.dailySummary) },
           ...input.messages,
         ],
       });

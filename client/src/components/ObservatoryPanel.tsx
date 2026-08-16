@@ -1,7 +1,10 @@
 import { AIChatBox, type Message } from "@/components/AIChatBox";
 import { appendObservatoryMessage, createObservatoryChatRequest, OBSERVATORY_CHAT_ERROR, OBSERVATORY_GREETING } from "@/lib/observatoryChat";
+import { DEFAULT_ALERT_PREFERENCES, OBSERVATORY_ALERTS_KEY, findTriggeredAlerts, parseAlertPreferences, requestObservatoryNotification, serializeAlertPreferences, type ObservatoryAlertPreferences } from "@/lib/observatoryAlerts";
 import { trpc } from "@/lib/trpc";
-import React, { useMemo, useState } from "react";
+import { Bell, BellRing } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 type ObservatoryData = {
   asOf: string | null;
@@ -10,6 +13,8 @@ type ObservatoryData = {
   highlights: Array<{ ticker: string; name: string; price: number | null; percentChange: number | null; quoteDate: string | null }>;
   headlines: Array<{ title: string; source: string; url: string; publishedAt: Date | string | null }>;
   sources: Array<{ label: string; detail: string; url: string | null }>;
+  macroHistory: Array<{ ticker: string; date: string; close: number }>;
+  dailySummary: { summaryDate: Date | string; generatedAt: Date | string; content: string } | null;
 };
 
 type DailySummary = { id: number; summaryDate: Date | string; generatedAt: Date | string; snapshotAsOf: Date | string | null; content: string; sources: unknown[] };
@@ -21,7 +26,7 @@ const time = (value: string | Date | null) => value ? new Intl.DateTimeFormat("z
 const dateKey = (value: string | Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
 const dateLabel = (value: string | Date) => new Intl.DateTimeFormat("zh-TW", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
 const isMacro = (ticker: string) => ["TWD=X", "DX-Y.NYB", "^IRX", "^TNX", "^TYX"].includes(ticker);
-const QUICK_PROMPTS = ["依本頁資料整理今日市場趨勢", "美元指數、台幣與美債殖利率有何變化？", "請生成今日財經摘要重點", "哪些新聞線索值得持續追蹤？", "請說明目前資料的風險與限制"];
+const QUICK_PROMPTS = ["分析今日摘要", "依本頁資料整理今日市場趨勢", "美元指數、台幣與美債殖利率有何變化？", "請生成今日財經摘要重點", "哪些新聞線索值得持續追蹤？", "請說明目前資料的風險與限制"];
 
 export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }) {
   const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: OBSERVATORY_GREETING }]);
@@ -43,6 +48,41 @@ export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }
   });
   const selectedFromHistory = useMemo(() => history.data?.find(item => dateKey(item.summaryDate) === selectedDate) ?? null, [history.data, selectedDate]);
   const displayedSummary = selectedSummary.data ?? selectedFromHistory;
+  const [alertPreferences, setAlertPreferences] = useState<ObservatoryAlertPreferences>(() => parseAlertPreferences(typeof window === "undefined" ? null : window.localStorage.getItem(OBSERVATORY_ALERTS_KEY)));
+  const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
+  const yieldCurveData = useMemo(() => {
+    const byDate = new Map<string, { date: string; short?: number; tenYear?: number; long?: number }>();
+    for (const point of data?.macroHistory ?? []) {
+      if (!["^IRX", "^TNX", "^TYX"].includes(point.ticker)) continue;
+      const row = byDate.get(point.date) ?? { date: point.date };
+      if (point.ticker === "^IRX") row.short = point.close;
+      if (point.ticker === "^TNX") row.tenYear = point.close;
+      if (point.ticker === "^TYX") row.long = point.close;
+      byDate.set(point.date, row);
+    }
+    return Array.from(byDate.values()).slice(-90);
+  }, [data?.macroHistory]);
+  const fxHistoryData = useMemo(() => (data?.macroHistory ?? []).filter(point => point.ticker === "TWD=X").slice(-90).map(point => ({ date: point.date, rate: point.close })), [data?.macroHistory]);
+
+  useEffect(() => {
+    window.localStorage.setItem(OBSERVATORY_ALERTS_KEY, serializeAlertPreferences(alertPreferences));
+  }, [alertPreferences]);
+
+  useEffect(() => {
+    if (!data || !alertPreferences.enabled || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    const triggered = findTriggeredAlerts(data.highlights, alertPreferences);
+    if (triggered.length === 0) return;
+    const signature = triggered.map(item => `${item.ticker}:${item.percentChange}`).join("|");
+    if (window.localStorage.getItem("observatory-last-alert") === signature) return;
+    new Notification("投資儀表板異常提醒", { body: triggered.map(item => `${item.name} ${percent(item.percentChange)}`).join("、") });
+    window.localStorage.setItem("observatory-last-alert", signature);
+  }, [data, alertPreferences]);
+
+  const requestNotifications = async () => {
+    const result = await requestObservatoryNotification();
+    if (result.permission === "granted") setAlertPreferences(current => ({ ...current, enabled: true }));
+    setNotificationMessage(result.message);
+  };
 
   const send = (content: string) => {
     const next = appendObservatoryMessage(messages, "user", content);
@@ -62,8 +102,10 @@ export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }
     <div className="observatory-meta"><span>資料快照：{time(data.asOf)}</span><span>時區：Asia/Taipei</span></div>
     <div className="observatory-grid">
       <section className="observatory-section"><div className="detail-section-title"><span>重點行情與總經指標</span><small>資料來源：Yahoo Finance</small></div><div className="observatory-market-grid">{data.highlights.map(item => <article className={isMacro(item.ticker) ? "macro-quote" : ""} key={item.ticker}><span>{item.name}</span><strong className={tone(item.percentChange)}>{number(item.price)}{item.ticker === "^TNX" || item.ticker === "^TYX" || item.ticker === "^IRX" ? "%" : ""}</strong><small className={tone(item.percentChange)}>{percent(item.percentChange)} · {item.quoteDate ?? "--"}</small></article>)}</div></section>
-      <section className="observatory-section"><div className="detail-section-title"><span>今日新聞線索</span><small>資料來源：Google News RSS</small></div><div className="observatory-headlines">{data.headlines.length === 0 ? <p>目前沒有可用新聞資料。</p> : data.headlines.map(item => <a key={`${item.url}-${item.title}`} href={item.url} target="_blank" rel="noreferrer"><strong>{item.title}</strong><span>{item.source}</span></a>)}</div></section>
+      <section className="observatory-section observatory-macro-section"><div className="detail-section-title"><span>總經歷史圖表</span><small>資料來源：Yahoo Finance；最近 90 個交易日</small></div><div className="observatory-chart-grid"><article className="observatory-chart-card"><strong>美國公債殖利率曲線</strong><div className="observatory-chart-legend"><span>13週</span><span>10年</span><span>30年</span></div>{yieldCurveData.length ? <ResponsiveContainer width="100%" height={220}><LineChart data={yieldCurveData}><CartesianGrid strokeDasharray="3 3" opacity={0.25} /><XAxis dataKey="date" hide /><YAxis width={42} tickFormatter={value => `${Number(value).toFixed(1)}%`} /><Tooltip formatter={(value: number) => `${value.toFixed(3)}%`} labelFormatter={label => `日期 ${label}`} /><Line type="monotone" dataKey="short" stroke="#7c3aed" dot={false} strokeWidth={2} name="13週" /><Line type="monotone" dataKey="tenYear" stroke="#2563eb" dot={false} strokeWidth={2} name="10年" /><Line type="monotone" dataKey="long" stroke="#0891b2" dot={false} strokeWidth={2} name="30年" /></LineChart></ResponsiveContainer> : <p className="empty-inline">等待殖利率歷史資料。</p>}</article><article className="observatory-chart-card"><strong>美元／台幣歷史走勢</strong><small>美元兌台幣（TWD=X）</small>{fxHistoryData.length ? <ResponsiveContainer width="100%" height={220}><LineChart data={fxHistoryData}><CartesianGrid strokeDasharray="3 3" opacity={0.25} /><XAxis dataKey="date" hide /><YAxis width={52} domain={["auto", "auto"]} /><Tooltip formatter={(value: number) => value.toFixed(4)} labelFormatter={label => `日期 ${label}`} /><Line type="monotone" dataKey="rate" stroke="#d97706" dot={false} strokeWidth={2} name="USD/TWD" /></LineChart></ResponsiveContainer> : <p className="empty-inline">等待美元／台幣歷史資料。</p>}</article></div></section><section className="observatory-section"><div className="detail-section-title"><span>今日新聞線索</span><small>資料來源：Google News RSS</small></div><div className="observatory-headlines">{data.headlines.length === 0 ? <p>目前沒有可用新聞資料。</p> : data.headlines.map(item => <a key={`${item.url}-${item.title}`} href={item.url} target="_blank" rel="noreferrer"><strong>{item.title}</strong><span>{item.source}</span></a>)}</div></section>
     </div>
+
+    <section className="observatory-alert-section"><div className="detail-section-title"><span>{alertPreferences.enabled ? <BellRing size={17} /> : <Bell size={17} />} 異常通知設定</span><small>設定保存在此瀏覽器</small></div><div className="observatory-alert-controls"><label><input type="checkbox" checked={alertPreferences.enabled} onChange={event => setAlertPreferences(current => ({ ...current, enabled: event.target.checked }))} /> 啟用市場與總經異常提醒</label><label>市場變動門檻 <input type="number" min="0.1" max="20" step="0.1" value={alertPreferences.marketThreshold} onChange={event => setAlertPreferences(current => ({ ...current, marketThreshold: Number(event.target.value) }))} />%</label><label>總經指標門檻 <input type="number" min="0.1" max="10" step="0.1" value={alertPreferences.macroThreshold} onChange={event => setAlertPreferences(current => ({ ...current, macroThreshold: Number(event.target.value) }))} />%</label><button className="button outline" type="button" onClick={() => void requestNotifications()}>允許瀏覽器通知</button></div>{notificationMessage ? <p className="observatory-alert-message">{notificationMessage}</p> : <p className="observatory-alert-help">僅在瀏覽器允許通知、且最新資料超過門檻時提醒；不會在未經使用者操作下要求權限。</p>}</section>
 
     <section className="observatory-summary-section">
       <div className="detail-section-title"><span>每日財經摘要</span><small>依目前快照生成並保存至歷史紀錄</small></div>
