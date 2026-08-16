@@ -16,7 +16,7 @@ import { calculatePerformances, cleanText, parseHistoryPayload, safeUrl, sampleH
 import { buildPublicFundDetail } from "./fundDetail";
 import { buildObservatorySnapshot } from "./observatory";
 
-const MACRO_HISTORY_TICKERS = ["TWD=X", "^IRX", "^TNX", "^TYX"] as const;
+export const MACRO_HISTORY_TICKERS = ["TWD=X", "^IRX", "^TNX", "^TYX"] as const;
 
 type FundConfig = {
   fundType: "domestic" | "foreign";
@@ -261,6 +261,25 @@ async function fetchMarketQuote(config: (typeof MARKET_CONFIG)[number]) {
   throw lastError instanceof Error ? lastError : new Error("行情更新失敗");
 }
 
+export async function refreshMacroHistory(tickers: readonly string[] = ["^GSPC", ...MACRO_HISTORY_TICKERS]) {
+  const db = await getDb();
+  if (!db) throw new Error("資料庫尚未連線");
+  const errors: string[] = [];
+  let pointsUpdated = 0;
+  for (const ticker of tickers) {
+    try {
+      const series = await fetchMarketHistory(ticker);
+      for (let index = 0; index < series.length; index += 250) {
+        await db.insert(marketHistory).values(series.slice(index, index + 250).map(point => ({ ticker, pointDate: databaseDate(point.date), close: point.nav.toFixed(6), source: "Yahoo Finance" }))).onDuplicateKeyUpdate({ set: { close: sql`VALUES(close)`, sourcedAt: new Date() } });
+      }
+      pointsUpdated += series.length;
+    } catch (error) {
+      errors.push(`${ticker} 歷史：${error instanceof Error ? error.message : "更新失敗"}`);
+    }
+  }
+  return { pointsUpdated, errors };
+}
+
 export async function refreshDashboardData() {
   const db = await getDb();
   if (!db) throw new Error("資料庫尚未連線");
@@ -350,16 +369,8 @@ export async function refreshDashboardData() {
     }
   }
 
-  for (const ticker of ["^GSPC", ...MACRO_HISTORY_TICKERS]) {
-    try {
-      const series = await fetchMarketHistory(ticker);
-      for (let index = 0; index < series.length; index += 250) {
-        await db.insert(marketHistory).values(series.slice(index, index + 250).map(point => ({ ticker, pointDate: databaseDate(point.date), close: point.nav.toFixed(6), source: "Yahoo Finance" }))).onDuplicateKeyUpdate({ set: { close: sql`VALUES(close)`, sourcedAt: new Date() } });
-      }
-    } catch (error) {
-      errors.push(`${ticker} 歷史：${error instanceof Error ? error.message : "更新失敗"}`);
-    }
-  }
+  const historyRefresh = await refreshMacroHistory(["^GSPC", ...MACRO_HISTORY_TICKERS]);
+  errors.push(...historyRefresh.errors);
 
   const status = errors.length === 0 ? "success" : fundsUpdated > 0 || fetchedNews.length > 0 ? "partial" : "failed";
   await db.update(refreshRuns).set({

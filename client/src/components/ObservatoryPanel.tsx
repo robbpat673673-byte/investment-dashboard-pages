@@ -1,5 +1,6 @@
 import { AIChatBox, type Message } from "@/components/AIChatBox";
 import { appendObservatoryMessage, createObservatoryChatRequest, OBSERVATORY_CHAT_ERROR, OBSERVATORY_GREETING } from "@/lib/observatoryChat";
+import { OBSERVATORY_CHAT_HISTORY_KEY, parseObservatoryChatHistory, serializeObservatoryChatHistory, upsertObservatoryChatSession, type ObservatoryChatSession } from "@/lib/observatoryChatHistory";
 import { DEFAULT_ALERT_PREFERENCES, OBSERVATORY_ALERTS_KEY, findTriggeredAlerts, parseAlertPreferences, requestObservatoryNotification, serializeAlertPreferences, type ObservatoryAlertPreferences } from "@/lib/observatoryAlerts";
 import { trpc } from "@/lib/trpc";
 import { Bell, BellRing } from "lucide-react";
@@ -30,6 +31,8 @@ const QUICK_PROMPTS = ["分析今日摘要", "依本頁資料整理今日市場�
 
 export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }) {
   const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: OBSERVATORY_GREETING }]);
+  const [chatHistory, setChatHistory] = useState<ObservatoryChatSession[]>(() => parseObservatoryChatHistory(typeof window === "undefined" ? null : window.localStorage.getItem(OBSERVATORY_CHAT_HISTORY_KEY)));
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const chat = trpc.observatory.chat.useMutation({
@@ -63,20 +66,28 @@ export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }
     return Array.from(byDate.values()).slice(-90);
   }, [data?.macroHistory]);
   const fxHistoryData = useMemo(() => (data?.macroHistory ?? []).filter(point => point.ticker === "TWD=X").slice(-90).map(point => ({ date: point.date, rate: point.close })), [data?.macroHistory]);
+  const triggeredAlerts = useMemo(() => data ? findTriggeredAlerts(data.highlights, alertPreferences) : [], [data, alertPreferences]);
 
   useEffect(() => {
     window.localStorage.setItem(OBSERVATORY_ALERTS_KEY, serializeAlertPreferences(alertPreferences));
   }, [alertPreferences]);
 
   useEffect(() => {
+    if (!messages.some(message => message.role === "user")) return;
+    const next = upsertObservatoryChatSession(chatHistory, messages, activeChatId);
+    setChatHistory(next);
+    window.localStorage.setItem(OBSERVATORY_CHAT_HISTORY_KEY, serializeObservatoryChatHistory(next));
+    if (next[0]) setActiveChatId(next[0].id);
+  }, [messages]);
+
+  useEffect(() => {
     if (!data || !alertPreferences.enabled || typeof Notification === "undefined" || Notification.permission !== "granted") return;
-    const triggered = findTriggeredAlerts(data.highlights, alertPreferences);
-    if (triggered.length === 0) return;
-    const signature = triggered.map(item => `${item.ticker}:${item.percentChange}`).join("|");
+    if (triggeredAlerts.length === 0) return;
+    const signature = triggeredAlerts.map(item => `${item.ticker}:${item.percentChange}`).join("|");
     if (window.localStorage.getItem("observatory-last-alert") === signature) return;
-    new Notification("投資儀表板異常提醒", { body: triggered.map(item => `${item.name} ${percent(item.percentChange)}`).join("、") });
+    new Notification("投資儀表板異常提醒", { body: triggeredAlerts.map(item => `${item.name} ${percent(item.percentChange)}`).join("、") });
     window.localStorage.setItem("observatory-last-alert", signature);
-  }, [data, alertPreferences]);
+  }, [data, alertPreferences, triggeredAlerts]);
 
   const requestNotifications = async () => {
     const result = await requestObservatoryNotification();
@@ -89,6 +100,15 @@ export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }
     if (next === messages) return;
     setMessages(next);
     chat.mutate({ messages: createObservatoryChatRequest(next) });
+  };
+
+  const startNewChat = () => {
+    setActiveChatId(null);
+    setMessages([{ role: "assistant", content: OBSERVATORY_GREETING }]);
+  };
+  const selectChat = (session: ObservatoryChatSession) => {
+    setActiveChatId(session.id);
+    setMessages(session.messages);
   };
 
   if (!data) return <div className="empty-inline">等待觀測站資料載入。</div>;
@@ -107,6 +127,8 @@ export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }
 
     <section className="observatory-alert-section"><div className="detail-section-title"><span>{alertPreferences.enabled ? <BellRing size={17} /> : <Bell size={17} />} 異常通知設定</span><small>設定保存在此瀏覽器</small></div><div className="observatory-alert-controls"><label><input type="checkbox" checked={alertPreferences.enabled} onChange={event => setAlertPreferences(current => ({ ...current, enabled: event.target.checked }))} /> 啟用市場與總經異常提醒</label><label>市場變動門檻 <input type="number" min="0.1" max="20" step="0.1" value={alertPreferences.marketThreshold} onChange={event => setAlertPreferences(current => ({ ...current, marketThreshold: Number(event.target.value) }))} />%</label><label>總經指標門檻 <input type="number" min="0.1" max="10" step="0.1" value={alertPreferences.macroThreshold} onChange={event => setAlertPreferences(current => ({ ...current, macroThreshold: Number(event.target.value) }))} />%</label><button className="button outline" type="button" onClick={() => void requestNotifications()}>允許瀏覽器通知</button></div>{notificationMessage ? <p className="observatory-alert-message">{notificationMessage}</p> : <p className="observatory-alert-help">僅在瀏覽器允許通知、且最新資料超過門檻時提醒；不會在未經使用者操作下要求權限。</p>}</section>
 
+    <section className={triggeredAlerts.length > 0 ? "observatory-alert-banners" : "observatory-alert-empty"} aria-live="polite">{triggeredAlerts.length > 0 ? <><strong>異常警示</strong><div>{triggeredAlerts.map(item => <span className={`observatory-alert-badge ${isMacro(item.ticker) ? "macro" : "market"}`} key={item.ticker}><BellRing size={14} />{item.name} {percent(item.percentChange)}（門檻已觸發）</span>)}</div></> : <span>目前沒有標的超過已設定的市場／總經門檻。</span>}</section>
+
     <section className="observatory-summary-section">
       <div className="detail-section-title"><span>每日財經摘要</span><small>依目前快照生成並保存至歷史紀錄</small></div>
       <div className="observatory-summary-actions"><button className="button primary" type="button" onClick={() => generateSummary.mutate()} disabled={generateSummary.isPending}>{generateSummary.isPending ? "生成中…" : "一鍵生成今日摘要"}</button><span>摘要會標示資料日期、來源與限制，當日再次生成會更新同一筆紀錄。</span></div>
@@ -115,7 +137,7 @@ export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }
     </section>
 
     <div className="observatory-chat-layout">
-      <section className="observatory-chat-intro"><span className="observatory-kicker">交談式整理</span><h2>詢問財經小智</h2><p>可請它整理市場趨勢、解讀本頁新聞脈絡，或說明目前資料限制。回覆僅基於本頁快照，並會附上來源與風險限制。</p><ul><li>市場趨勢：以當前資料快照說明上漲與下跌標的。</li><li>總經解讀：查看匯率、美元指數與殖利率的當日變化。</li><li>新聞摘要：依本頁列出的 RSS 新聞標題與來源整理。</li></ul><div className="observatory-quick-prompts" aria-label="財經小智快速提問"><strong>快速提問</strong><div>{QUICK_PROMPTS.map(prompt => <button key={prompt} type="button" onClick={() => send(prompt)} disabled={chat.isPending}>{prompt}</button>)}</div></div></section>
+      <section className="observatory-chat-intro"><span className="observatory-kicker">交談式整理</span><h2>詢問財經小智</h2><p>可請它整理市場趨勢、解讀本頁新聞脈絡，或說明目前資料限制。回覆僅基於本頁快照，並會附上來源與風險限制。</p><ul><li>市場趨勢：以當前資料快照說明上漲與下跌標的。</li><li>總經解讀：查看匯率、美元指數與殖利率的當日變化。</li><li>新聞摘要：依本頁列出的 RSS 新聞標題與來源整理。</li></ul><div className="observatory-chat-history" aria-label="財經小智對話歷史"><div className="observatory-chat-history-header"><strong>對話歷史</strong><button className="button outline" type="button" onClick={startNewChat}>新對話</button></div>{chatHistory.length === 0 ? <p>送出第一個問題後，對話會保存在此瀏覽器。</p> : <div className="observatory-chat-history-list">{chatHistory.map(session => <button className={session.id === activeChatId ? "selected" : ""} type="button" key={session.id} onClick={() => selectChat(session)}><strong>{session.title}</strong><small>{time(session.updatedAt)}</small></button>)}</div>}</div><div className="observatory-quick-prompts" aria-label="財經小智快速提問"><strong>快速提問</strong><div>{QUICK_PROMPTS.map(prompt => <button key={prompt} type="button" onClick={() => send(prompt)} disabled={chat.isPending}>{prompt}</button>)}</div></div></section>
       <AIChatBox messages={messages} onSendMessage={send} isLoading={chat.isPending} height="470px" className="observatory-chat" placeholder="例如：依本頁資料整理今日市場觀察" />
     </div>
 

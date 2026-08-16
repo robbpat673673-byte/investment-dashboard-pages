@@ -47,7 +47,7 @@ vi.mock("@/lib/trpc", () => ({
               asOf: "2026-08-16T04:00:00.000Z",
               pulse: "中性",
               breadth: { upCount: 2, downCount: 2, flatCount: 1, total: 5 },
-              highlights: [{ ticker: "^TWII", name: "加權指數", price: 23100.1, percentChange: 0.42, quoteDate: "2026-08-16" }],
+              highlights: [{ ticker: "^TWII", name: "加權指數", price: 23100.1, percentChange: 0.42, quoteDate: "2026-08-16" }, { ticker: "^TNX", name: "美國 10 年期公債殖利率", price: 4.7, percentChange: 1.19, quoteDate: "2026-08-16" }],
               headlines: [{ title: "觀測站測試新聞", source: "Google 新聞・台灣財經", url: "https://example.com/news", publishedAt: "2026-08-16T03:30:00.000Z" }],
               sources: [{ label: "市場行情", detail: "Yahoo Finance 公開行情資料。", url: "https://finance.yahoo.com/" }],
               macroHistory: [{ ticker: "TWD=X", date: "2026-08-15", close: 32.1 }, { ticker: "^IRX", date: "2026-08-15", close: 5.2 }, { ticker: "^TNX", date: "2026-08-15", close: 4.3 }, { ticker: "^TYX", date: "2026-08-15", close: 4.9 }],
@@ -90,6 +90,7 @@ afterEach(() => {
   summaryState.mode = "success";
   summaryState.generated = null;
   summaryState.refetch.mockReset();
+  window.localStorage.clear();
   window.history.replaceState({}, "", "/");
 });
 
@@ -103,6 +104,7 @@ describe("Home 觀測站", () => {
     expect(screen.getByText("美國公債殖利率曲線")).toBeTruthy();
     expect(screen.getByText("美元／台幣歷史走勢")).toBeTruthy();
     expect(screen.getByText("異常通知設定")).toBeTruthy();
+    expect(screen.getByText(/目前沒有標的超過已設定/)).toBeTruthy();
     expect(screen.getByText("觀測站測試新聞")).toBeTruthy();
     expect(screen.getByText("資料來源與使用限制")).toBeTruthy();
     expect(screen.getByText(/本頁內容為資料整理與一般性研究觀察/)).toBeTruthy();
@@ -115,6 +117,21 @@ describe("Home 觀測站", () => {
     await waitFor(() => expect(screen.getByText(/摘要日期：2026-08-16/)).toBeTruthy());
     expect(screen.getByText(/測試限制/)).toBeTruthy();
     expect(JSON.stringify(mutationState.calls[0])).toContain("分析今日摘要");
+  });
+
+  it("啟用低門檻時顯示視覺化異常警示標籤", () => {
+    window.localStorage.setItem("observatory-alert-preferences", JSON.stringify({ enabled: true, marketThreshold: 2, macroThreshold: 1 }));
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "觀測站" }));
+    expect(screen.getByText(/門檻已觸發/)).toBeTruthy();
+  });
+
+  it("送出問題後建立可回顧的對話歷史項目", async () => {
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "觀測站" }));
+    fireEvent.click(screen.getByRole("button", { name: "分析今日摘要" }));
+    await waitFor(() => expect(window.localStorage.getItem("investment-dashboard-observatory-chat-history")).toContain("分析今日摘要"));
+    expect(screen.getByText("對話歷史")).toBeTruthy();
   });
 
   it("財經小智問答成功時顯示回覆並傳送裁切後的訊息", async () => {
@@ -133,8 +150,8 @@ describe("Home 觀測站", () => {
     fireEvent.click(screen.getByRole("button", { name: "一鍵生成今日摘要" }));
     await waitFor(() => expect(screen.getByText("測試每日摘要。")).toBeTruthy());
     expect(summaryState.refetch).toHaveBeenCalled();
-    const historyButton = screen.getByRole("button", { name: /2026/ });
-    expect(historyButton).toBeTruthy();
+    const historyButton = screen.getAllByRole("button", { name: /2026/ }).find(button => button.textContent?.includes("20:00"));
+    if (!historyButton) throw new Error("找不到摘要歷史按鈕");
     fireEvent.click(historyButton);
     expect(screen.getByText("測試每日摘要。")).toBeTruthy();
     expect(screen.getAllByText(/每日財經摘要/).length).toBeGreaterThan(0);
