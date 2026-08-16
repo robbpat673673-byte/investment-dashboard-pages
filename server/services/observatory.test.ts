@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildObservatorySnapshot } from "./observatory";
+import { buildObservatorySnapshot, dailySummarySystemPrompt, summaryDateTaipei } from "./observatory";
 
 describe("buildObservatorySnapshot", () => {
   it("以既有行情與新聞資料產生可追溯的市場廣度與焦點清單", () => {
@@ -22,5 +22,28 @@ describe("buildObservatorySnapshot", () => {
     expect(snapshot.pulse).toBe("中性");
     expect(snapshot.breadth.total).toBe(0);
     expect(snapshot.context).toContain("資料不足");
+  });
+
+  it("將匯率、美元指數與公債殖利率納入觀測站重點行情與上下文", () => {
+    const snapshot = buildObservatorySnapshot([
+      { ticker: "TWD=X", name: "美元兌台幣", price: 32.1, percentChange: 0.2, quoteDate: "2026-08-16" },
+      { ticker: "DX-Y.NYB", name: "美元指數", price: 101.2, percentChange: -0.1, quoteDate: "2026-08-16" },
+      { ticker: "^TNX", name: "美國 10 年期公債殖利率", price: 4.2, percentChange: 0.3, quoteDate: "2026-08-16" },
+    ], [], "2026-08-16T12:00:00.000Z");
+    expect(snapshot.highlights.map(item => item.ticker)).toEqual(["TWD=X", "DX-Y.NYB", "^TNX"]);
+    expect(snapshot.context).toContain("美元兌台幣");
+    expect(snapshot.context).toContain("美國 10 年期公債殖利率");
+  });
+
+  it("每日摘要提示詞要求事實、觀察與限制並禁止捏造", () => {
+    const prompt = dailySummarySystemPrompt("美元指數：101.2，資料時間：2026-08-16");
+    expect(prompt).toContain("## 今日事實");
+    expect(prompt).toContain("## 市場觀察");
+    expect(prompt).toContain("## 限制與風險");
+    expect(prompt).toContain("不可捏造");
+  });
+
+  it("摘要日期以台北時區產生 YYYY-MM-DD", () => {
+    expect(summaryDateTaipei(new Date("2026-08-15T16:30:00.000Z"))).toBe("2026-08-16");
   });
 });

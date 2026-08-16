@@ -171,5 +171,22 @@ export const appSettings = mysqlTable("app_settings", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+export const observatoryDailySummaries = mysqlTable(
+  "observatory_daily_summaries",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    summaryDate: date("summaryDate").notNull(),
+    generatedAt: timestamp("generatedAt").defaultNow().notNull(),
+    snapshotAsOf: timestamp("snapshotAsOf"),
+    content: text("content").notNull(),
+    sourcesJson: text("sourcesJson").notNull(),
+    model: varchar("model", { length: 64 }).notNull().default("gpt-5-mini"),
+  },
+  table => [
+    uniqueIndex("observatory_daily_summaries_date_unique").on(table.summaryDate),
+    index("observatory_daily_summaries_generated_idx").on(table.generatedAt),
+  ],
+);
+
 export type Fund = typeof funds.$inferSelect;
 export type InsertFund = typeof funds.$inferInsert;

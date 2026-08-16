@@ -1,3 +1,7 @@
+import { desc, eq } from "drizzle-orm";
+import { getDb } from "../db";
+import { observatoryDailySummaries } from "../../drizzle/schema";
+
 export type ObservatoryMarketQuote = {
   ticker: string;
   name: string;
@@ -13,7 +17,7 @@ export type ObservatoryNewsItem = {
   publishedAt: Date | string | null;
 };
 
-const preferredTickers = ["^TWII", "^DJI", "^IXIC", "^GSPC", "^SOX", "GC=F", "CL=F"];
+const preferredTickers = ["TWD=X", "DX-Y.NYB", "^TNX", "^TYX", "^TWII", "^DJI", "^IXIC", "^GSPC", "^SOX", "GC=F", "CL=F"];
 
 const pctText = (value: number | null) => value === null ? "資料不足" : `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
 
@@ -54,7 +58,7 @@ export function buildObservatorySnapshot(
     highlights,
     headlines,
     sources: [
-      { label: "市場行情", detail: "Yahoo Finance 公開行情資料；實際報價日期列於各資料列。", url: "https://finance.yahoo.com/" },
+      { label: "市場行情與總經指標", detail: "Yahoo Finance 公開行情資料；包含美元兌台幣、美元指數、13 週／10 年／30 年期美國公債殖利率，實際報價日期列於各資料列。", url: "https://finance.yahoo.com/" },
       { label: "財經新聞", detail: "Google News 繁體中文 RSS；各新聞保留原始來源與連結。", url: "https://news.google.com/" },
       { label: "更新時間", detail: asOf ? `資料庫最近刷新：${asOf}` : "尚未取得最近刷新時間。", url: null },
     ],
@@ -67,6 +71,49 @@ export function buildObservatorySnapshot(
       newsContext || "目前沒有可用新聞資料。",
     ].join("\n"),
   };
+}
+
+export function dailySummarySystemPrompt(snapshotContext: string) {
+  return `你是「財經小智」的每日摘要編輯。請使用繁體中文（台灣），只根據下方資料快照撰寫一份可存檔的每日財經摘要。
+
+固定使用以下三段：
+## 今日事實
+只列出快照中的行情、總經指標、新聞標題與資料時間；每項標示來源。
+## 市場觀察
+只做由上述事實直接推導的一般性觀察，不可預測或保證報酬。
+## 限制與風險
+說明資料涵蓋範圍、時間口徑、缺少的資料與投資風險。不得提供個人化投資建議或買賣指令。
+
+不可捏造數字、日期、新聞、來源或未提供的宏觀指標。資料快照：
+${snapshotContext}`;
+}
+
+export function summaryDateTaipei(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
+
+export async function saveDailySummary(input: { content: string; snapshotAsOf: string | null; sources: unknown[]; summaryDate?: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("資料庫尚未連線");
+  const summaryDate = input.summaryDate ?? summaryDateTaipei();
+  const summaryDateValue = new Date(`${summaryDate}T00:00:00.000Z`);
+  const content = input.content.trim().slice(0, 20_000);
+  const snapshotAsOf = input.snapshotAsOf ? new Date(input.snapshotAsOf) : null;
+  await db.insert(observatoryDailySummaries).values({ summaryDate: summaryDateValue, snapshotAsOf, content, sourcesJson: JSON.stringify(input.sources), model: "gpt-5-mini" }).onDuplicateKeyUpdate({ set: { generatedAt: new Date(), snapshotAsOf, content, sourcesJson: JSON.stringify(input.sources), model: "gpt-5-mini" } });
+  return (await db.select().from(observatoryDailySummaries).where(eq(observatoryDailySummaries.summaryDate, summaryDateValue)).limit(1))[0] ?? null;
+}
+
+export async function listDailySummaries(limit = 30) {
+  const db = await getDb();
+  if (!db) throw new Error("資料庫尚未連線");
+  return db.select().from(observatoryDailySummaries).orderBy(desc(observatoryDailySummaries.summaryDate)).limit(Math.min(Math.max(limit, 1), 90));
+}
+
+export async function getDailySummaryByDate(summaryDate: string) {
+  const db = await getDb();
+  if (!db) throw new Error("資料庫尚未連線");
+  const summaryDateValue = new Date(`${summaryDate}T00:00:00.000Z`);
+  return (await db.select().from(observatoryDailySummaries).where(eq(observatoryDailySummaries.summaryDate, summaryDateValue)).limit(1))[0] ?? null;
 }
 
 export function observatorySystemPrompt(snapshotContext: string) {

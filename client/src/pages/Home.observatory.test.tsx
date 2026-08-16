@@ -4,8 +4,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import React from "react";
 
 const mutationState = vi.hoisted(() => ({
-  mode: "success" as "success" | "error",
+  mode: "success" as "success" | "error" | "throttle",
   calls: [] as unknown[],
+}));
+
+const summaryState = vi.hoisted(() => ({
+  mode: "success" as "success" | "error",
+  generated: null as null | { id: number; summaryDate: string; generatedAt: string; snapshotAsOf: string; content: string; sources: unknown[] },
+  refetch: vi.fn(),
 }));
 
 vi.mock("@/components/AIChatBox", () => ({
@@ -47,10 +53,19 @@ vi.mock("@/lib/trpc", () => ({
           mutate: (payload: unknown) => {
             mutationState.calls.push(payload);
             if (mutationState.mode === "success") options.onSuccess?.({ answer: "## 事實\n測試成功回覆。來源：Yahoo Finance" });
+            else if (mutationState.mode === "throttle") options.onError?.(new Error("觀測站問答已達暫時使用上限，請稍後再試。"));
             else options.onError?.(new Error("測試失敗"));
           },
         }),
       },
+      summaryHistory: { useQuery: () => ({ data: summaryState.generated ? [summaryState.generated] : [], isLoading: false, refetch: summaryState.refetch }) },
+      summaryByDate: { useQuery: () => ({ data: summaryState.generated }) },
+      generateDailySummary: { useMutation: (options: { onSuccess?: (value: NonNullable<typeof summaryState.generated>) => void; onError?: (error: Error) => void }) => ({ isPending: false, mutate: vi.fn(() => {
+        if (summaryState.mode === "success") {
+          summaryState.generated = { id: 1, summaryDate: "2026-08-16", generatedAt: "2026-08-16T12:00:00.000Z", snapshotAsOf: "2026-08-16T11:50:00.000Z", content: "## 今日事實\n測試每日摘要。", sources: [] };
+          options.onSuccess?.(summaryState.generated);
+        } else options.onError?.(new Error("每日財經摘要生成失敗，請稍後再試。"));
+      }) }) },
     },
   },
 }));
@@ -61,6 +76,9 @@ afterEach(() => {
   cleanup();
   mutationState.mode = "success";
   mutationState.calls = [];
+  summaryState.mode = "success";
+  summaryState.generated = null;
+  summaryState.refetch.mockReset();
   window.history.replaceState({}, "", "/");
 });
 
@@ -70,7 +88,7 @@ describe("Home 觀測站", () => {
     fireEvent.click(screen.getByRole("button", { name: "觀測站" }));
 
     expect(screen.getByRole("heading", { name: "觀測站" })).toBeTruthy();
-    expect(screen.getByText("市場資料快照")).toBeTruthy();
+    expect(screen.getByText("重點行情與總經指標")).toBeTruthy();
     expect(screen.getByText("觀測站測試新聞")).toBeTruthy();
     expect(screen.getByText("資料來源與使用限制")).toBeTruthy();
     expect(screen.getByText(/本頁內容為資料整理與一般性研究觀察/)).toBeTruthy();
@@ -86,6 +104,27 @@ describe("Home 觀測站", () => {
     expect(JSON.stringify(mutationState.calls[0])).toContain("依本頁資料整理今日市場趨勢");
   });
 
+  it("一鍵生成成功後刷新歷史紀錄並顯示最新摘要", async () => {
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "觀測站" }));
+    fireEvent.click(screen.getByRole("button", { name: "一鍵生成今日摘要" }));
+    await waitFor(() => expect(screen.getByText("測試每日摘要。")).toBeTruthy());
+    expect(summaryState.refetch).toHaveBeenCalled();
+    const historyButton = screen.getByRole("button", { name: /2026/ });
+    expect(historyButton).toBeTruthy();
+    fireEvent.click(historyButton);
+    expect(screen.getByText("測試每日摘要。")).toBeTruthy();
+    expect(screen.getAllByText(/每日財經摘要/).length).toBeGreaterThan(0);
+  });
+
+  it("每日摘要生成失敗時顯示可理解的錯誤", async () => {
+    summaryState.mode = "error";
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "觀測站" }));
+    fireEvent.click(screen.getByRole("button", { name: "一鍵生成今日摘要" }));
+    await waitFor(() => expect(screen.getByText("每日財經摘要生成失敗，請稍後再試。")).toBeTruthy());
+  });
+
   it("財經小智問答失敗時顯示可理解的替代提示", async () => {
     mutationState.mode = "error";
     render(<Home />);
@@ -93,5 +132,13 @@ describe("Home 觀測站", () => {
     fireEvent.click(screen.getByRole("button", { name: "哪些新聞線索值得持續追蹤？" }));
 
     await waitFor(() => expect(screen.getByText(/目前無法產生觀測回覆/)).toBeTruthy());
+  });
+
+  it("財經小智問答節流時顯示稍後再試提示", async () => {
+    mutationState.mode = "throttle";
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "觀測站" }));
+    fireEvent.click(screen.getByRole("button", { name: "依本頁資料整理今日市場趨勢" }));
+    await waitFor(() => expect(screen.getByText("提問過於頻繁，請稍後再試。")).toBeTruthy());
   });
 });

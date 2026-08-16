@@ -75,6 +75,11 @@ const MARKET_CONFIG = [
   { ticker: "BZ=F", name: "布蘭特原油期貨", showAsCard: false, sortOrder: 13 },
   { ticker: "HG=F", name: "銅期貨", showAsCard: false, sortOrder: 14 },
   { ticker: "NG=F", name: "天然氣期貨", showAsCard: false, sortOrder: 15 },
+  { ticker: "TWD=X", name: "美元兌台幣", showAsCard: false, sortOrder: 16 },
+  { ticker: "DX-Y.NYB", name: "美元指數", showAsCard: false, sortOrder: 17 },
+  { ticker: "^IRX", name: "美國 13 週國庫券殖利率", showAsCard: false, sortOrder: 18 },
+  { ticker: "^TNX", name: "美國 10 年期公債殖利率", showAsCard: false, sortOrder: 19 },
+  { ticker: "^TYX", name: "美國 30 年期公債殖利率", showAsCard: false, sortOrder: 20 },
 ];
 
 const RSS_SOURCES = [

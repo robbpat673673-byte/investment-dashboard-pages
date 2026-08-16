@@ -6,7 +6,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { getPublicDashboardData, getPublicFundDetail } from "./services/dashboardRefresh";
 import { invokeLLM } from "./_core/llm";
-import { observatorySystemPrompt } from "./services/observatory";
+import { dailySummarySystemPrompt, getDailySummaryByDate, listDailySummaries, observatorySystemPrompt, saveDailySummary } from "./services/observatory";
 
 const observatoryMessage = z.object({
   role: z.enum(["user", "assistant"]),
@@ -54,6 +54,23 @@ export const appRouter = router({
       const answer = completion.choices[0]?.message.content;
       if (typeof answer !== "string" || !answer.trim()) throw new Error("觀測站暫時未能產生回覆");
       return { answer: answer.trim(), asOf: dashboard.observatory.asOf, sources: dashboard.observatory.sources };
+    }),
+    generateDailySummary: publicProcedure.mutation(async () => {
+      const dashboard = await getPublicDashboardData();
+      const completion = await invokeLLM({ model: "gpt-5-mini", messages: [{ role: "system", content: dailySummarySystemPrompt(dashboard.observatory.context) }, { role: "user", content: "請生成今日每日財經摘要，嚴格依照指定三段格式。" }] });
+      const content = completion.choices[0]?.message.content;
+      if (typeof content !== "string" || !content.trim()) throw new Error("每日財經摘要暫時無法生成");
+      const saved = await saveDailySummary({ content, snapshotAsOf: dashboard.observatory.asOf, sources: dashboard.observatory.sources });
+      if (!saved) throw new Error("每日財經摘要保存失敗");
+      return { id: saved.id, summaryDate: saved.summaryDate, generatedAt: saved.generatedAt, snapshotAsOf: saved.snapshotAsOf, content: saved.content, sources: dashboard.observatory.sources };
+    }),
+    summaryHistory: publicProcedure.input(z.object({ limit: z.number().int().min(1).max(90).default(30) }).optional()).query(async ({ input }) => {
+      const rows = await listDailySummaries(input?.limit ?? 30);
+      return rows.map(row => ({ id: row.id, summaryDate: row.summaryDate, generatedAt: row.generatedAt, snapshotAsOf: row.snapshotAsOf, content: row.content, sources: JSON.parse(row.sourcesJson) as unknown[] }));
+    }),
+    summaryByDate: publicProcedure.input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).query(async ({ input }) => {
+      const row = await getDailySummaryByDate(input.date);
+      return row ? { id: row.id, summaryDate: row.summaryDate, generatedAt: row.generatedAt, snapshotAsOf: row.snapshotAsOf, content: row.content, sources: JSON.parse(row.sourcesJson) as unknown[] } : null;
     }),
   }),
 
