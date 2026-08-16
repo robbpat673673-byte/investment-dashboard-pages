@@ -126,6 +126,43 @@ describe("Home 觀測站", () => {
     expect(screen.getByText(/門檻已觸發/)).toBeTruthy();
   });
 
+  it("顯示警示日期與來源並支援已讀、忽略與復原", () => {
+    window.localStorage.setItem("observatory-alert-preferences", JSON.stringify({ enabled: true, marketThreshold: 2, macroThreshold: 1 }));
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "觀測站" }));
+    expect(screen.getByText(/觸發日期：2026-08-16/)).toBeTruthy();
+    expect(screen.getByText(/資料來源：市場行情/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "標記為已讀" }));
+    expect(screen.getByText("已讀")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "忽略" }));
+    expect(screen.getByText(/已忽略 1 則警示/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "復原" }));
+    expect(screen.getByRole("button", { name: "忽略" })).toBeTruthy();
+  });
+
+  it("支援 1 個月、3 個月、6 個月與 1 年圖表區間", () => {
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "觀測站" }));
+    expect(screen.getByRole("group", { name: "總經圖表時間區間" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "1個月" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "3個月" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "6個月" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "1年" }));
+    expect(screen.getByText(/最近 1 年交易日/)).toBeTruthy();
+  });
+
+  it("在 375px viewport 下保留圖表區間與警示操作可用", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    window.localStorage.setItem("observatory-alert-preferences", JSON.stringify({ enabled: true, marketThreshold: 2, macroThreshold: 1 }));
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "觀測站" }));
+    expect(screen.getByRole("button", { name: "1個月" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "1年" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "標記為已讀" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "忽略" })).toBeTruthy();
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
+  });
+
   it("送出問題後建立可回顧的對話歷史項目", async () => {
     render(<Home />);
     fireEvent.click(screen.getByRole("button", { name: "觀測站" }));

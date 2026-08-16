@@ -1,7 +1,8 @@
 import { AIChatBox, type Message } from "@/components/AIChatBox";
 import { appendObservatoryMessage, createObservatoryChatRequest, OBSERVATORY_CHAT_ERROR, OBSERVATORY_GREETING } from "@/lib/observatoryChat";
 import { OBSERVATORY_CHAT_HISTORY_KEY, parseObservatoryChatHistory, serializeObservatoryChatHistory, upsertObservatoryChatSession, type ObservatoryChatSession } from "@/lib/observatoryChatHistory";
-import { DEFAULT_ALERT_PREFERENCES, OBSERVATORY_ALERTS_KEY, findTriggeredAlerts, parseAlertPreferences, requestObservatoryNotification, serializeAlertPreferences, type ObservatoryAlertPreferences } from "@/lib/observatoryAlerts";
+import { DEFAULT_ALERT_PREFERENCES, OBSERVATORY_ALERTS_KEY, OBSERVATORY_ALERT_STATE_KEY, alertDispositionKey, findTriggeredAlerts, parseAlertDisposition, parseAlertPreferences, requestObservatoryNotification, serializeAlertDisposition, serializeAlertPreferences, type ObservatoryAlertDisposition, type ObservatoryAlertPreferences } from "@/lib/observatoryAlerts";
+import { filterMacroHistoryByDays } from "@/lib/observatoryChart";
 import { trpc } from "@/lib/trpc";
 import { Bell, BellRing } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
@@ -28,6 +29,7 @@ const dateKey = (value: string | Date) => new Intl.DateTimeFormat("en-CA", { tim
 const dateLabel = (value: string | Date) => new Intl.DateTimeFormat("zh-TW", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
 const isMacro = (ticker: string) => ["TWD=X", "DX-Y.NYB", "^IRX", "^TNX", "^TYX"].includes(ticker);
 const QUICK_PROMPTS = ["分析今日摘要", "依本頁資料整理今日市場趨勢", "美元指數、台幣與美債殖利率有何變化？", "請生成今日財經摘要重點", "哪些新聞線索值得持續追蹤？", "請說明目前資料的風險與限制"];
+const CHART_RANGES = [{ value: "1M", label: "1個月", days: 31 }, { value: "3M", label: "3個月", days: 92 }, { value: "6M", label: "6個月", days: 184 }, { value: "1Y", label: "1年", days: 366 }] as const;
 
 export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }) {
   const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: OBSERVATORY_GREETING }]);
@@ -53,6 +55,9 @@ export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }
   const displayedSummary = selectedSummary.data ?? selectedFromHistory;
   const [alertPreferences, setAlertPreferences] = useState<ObservatoryAlertPreferences>(() => parseAlertPreferences(typeof window === "undefined" ? null : window.localStorage.getItem(OBSERVATORY_ALERTS_KEY)));
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
+  const [alertDisposition, setAlertDisposition] = useState<ObservatoryAlertDisposition>(() => parseAlertDisposition(typeof window === "undefined" ? null : window.localStorage.getItem(OBSERVATORY_ALERT_STATE_KEY)));
+  const [chartRange, setChartRange] = useState<"1M" | "3M" | "6M" | "1Y">("3M");
+  const rangeDays = chartRange === "1M" ? 31 : chartRange === "3M" ? 92 : chartRange === "6M" ? 184 : 366;
   const yieldCurveData = useMemo(() => {
     const byDate = new Map<string, { date: string; short?: number; tenYear?: number; long?: number }>();
     for (const point of data?.macroHistory ?? []) {
@@ -63,10 +68,13 @@ export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }
       if (point.ticker === "^TYX") row.long = point.close;
       byDate.set(point.date, row);
     }
-    return Array.from(byDate.values()).slice(-90);
-  }, [data?.macroHistory]);
-  const fxHistoryData = useMemo(() => (data?.macroHistory ?? []).filter(point => point.ticker === "TWD=X").slice(-90).map(point => ({ date: point.date, rate: point.close })), [data?.macroHistory]);
+    return filterMacroHistoryByDays(Array.from(byDate.values()), rangeDays);
+  }, [data?.macroHistory, rangeDays]);
+  const fxHistoryData = useMemo(() => filterMacroHistoryByDays((data?.macroHistory ?? []).filter(point => point.ticker === "TWD=X").map(point => ({ date: point.date, rate: point.close })), rangeDays), [data?.macroHistory, rangeDays]);
   const triggeredAlerts = useMemo(() => data ? findTriggeredAlerts(data.highlights, alertPreferences) : [], [data, alertPreferences]);
+  const visibleTriggeredAlerts = useMemo(() => triggeredAlerts.filter(item => !alertDisposition.ignored.includes(alertDispositionKey(item))), [triggeredAlerts, alertDisposition.ignored]);
+  const ignoredTriggeredAlerts = useMemo(() => triggeredAlerts.filter(item => alertDisposition.ignored.includes(alertDispositionKey(item))), [triggeredAlerts, alertDisposition.ignored]);
+  const alertSource = data?.sources.find(source => source.label.includes("行情") || source.detail.includes("Yahoo"))?.label ?? "Yahoo Finance";
 
   useEffect(() => {
     window.localStorage.setItem(OBSERVATORY_ALERTS_KEY, serializeAlertPreferences(alertPreferences));
@@ -81,13 +89,21 @@ export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }
   }, [messages]);
 
   useEffect(() => {
+    window.localStorage.setItem(OBSERVATORY_ALERT_STATE_KEY, serializeAlertDisposition(alertDisposition));
+  }, [alertDisposition]);
+
+  useEffect(() => {
     if (!data || !alertPreferences.enabled || typeof Notification === "undefined" || Notification.permission !== "granted") return;
-    if (triggeredAlerts.length === 0) return;
-    const signature = triggeredAlerts.map(item => `${item.ticker}:${item.percentChange}`).join("|");
+    if (visibleTriggeredAlerts.length === 0) return;
+    const signature = visibleTriggeredAlerts.map(item => `${item.ticker}:${item.percentChange}`).join("|");
     if (window.localStorage.getItem("observatory-last-alert") === signature) return;
-    new Notification("投資儀表板異常提醒", { body: triggeredAlerts.map(item => `${item.name} ${percent(item.percentChange)}`).join("、") });
+    new Notification("投資儀表板異常提醒", { body: visibleTriggeredAlerts.map(item => `${item.name} ${percent(item.percentChange)}`).join("、") });
     window.localStorage.setItem("observatory-last-alert", signature);
-  }, [data, alertPreferences, triggeredAlerts]);
+  }, [data, alertPreferences, visibleTriggeredAlerts]);
+
+  const markAlertRead = (key: string) => setAlertDisposition(current => ({ ...current, read: current.read.includes(key) ? current.read : [...current.read, key] }));
+  const ignoreAlert = (key: string) => setAlertDisposition(current => ({ ...current, ignored: current.ignored.includes(key) ? current.ignored : [...current.ignored, key] }));
+  const restoreAlert = (key: string) => setAlertDisposition(current => ({ ...current, ignored: current.ignored.filter(item => item !== key) }));
 
   const requestNotifications = async () => {
     const result = await requestObservatoryNotification();
@@ -122,12 +138,20 @@ export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }
     <div className="observatory-meta"><span>資料快照：{time(data.asOf)}</span><span>時區：Asia/Taipei</span></div>
     <div className="observatory-grid">
       <section className="observatory-section"><div className="detail-section-title"><span>重點行情與總經指標</span><small>資料來源：Yahoo Finance</small></div><div className="observatory-market-grid">{data.highlights.map(item => <article className={isMacro(item.ticker) ? "macro-quote" : ""} key={item.ticker}><span>{item.name}</span><strong className={tone(item.percentChange)}>{number(item.price)}{item.ticker === "^TNX" || item.ticker === "^TYX" || item.ticker === "^IRX" ? "%" : ""}</strong><small className={tone(item.percentChange)}>{percent(item.percentChange)} · {item.quoteDate ?? "--"}</small></article>)}</div></section>
-      <section className="observatory-section observatory-macro-section"><div className="detail-section-title"><span>總經歷史圖表</span><small>資料來源：Yahoo Finance；最近 90 個交易日</small></div><div className="observatory-chart-grid"><article className="observatory-chart-card"><strong>美國公債殖利率曲線</strong><div className="observatory-chart-legend"><span>13週</span><span>10年</span><span>30年</span></div>{yieldCurveData.length ? <ResponsiveContainer width="100%" height={220}><LineChart data={yieldCurveData}><CartesianGrid strokeDasharray="3 3" opacity={0.25} /><XAxis dataKey="date" hide /><YAxis width={42} tickFormatter={value => `${Number(value).toFixed(1)}%`} /><Tooltip formatter={(value: number) => `${value.toFixed(3)}%`} labelFormatter={label => `日期 ${label}`} /><Line type="monotone" dataKey="short" stroke="#7c3aed" dot={false} strokeWidth={2} name="13週" /><Line type="monotone" dataKey="tenYear" stroke="#2563eb" dot={false} strokeWidth={2} name="10年" /><Line type="monotone" dataKey="long" stroke="#0891b2" dot={false} strokeWidth={2} name="30年" /></LineChart></ResponsiveContainer> : <p className="empty-inline">等待殖利率歷史資料。</p>}</article><article className="observatory-chart-card"><strong>美元／台幣歷史走勢</strong><small>美元兌台幣（TWD=X）</small>{fxHistoryData.length ? <ResponsiveContainer width="100%" height={220}><LineChart data={fxHistoryData}><CartesianGrid strokeDasharray="3 3" opacity={0.25} /><XAxis dataKey="date" hide /><YAxis width={52} domain={["auto", "auto"]} /><Tooltip formatter={(value: number) => value.toFixed(4)} labelFormatter={label => `日期 ${label}`} /><Line type="monotone" dataKey="rate" stroke="#d97706" dot={false} strokeWidth={2} name="USD/TWD" /></LineChart></ResponsiveContainer> : <p className="empty-inline">等待美元／台幣歷史資料。</p>}</article></div></section><section className="observatory-section"><div className="detail-section-title"><span>今日新聞線索</span><small>資料來源：Google News RSS</small></div><div className="observatory-headlines">{data.headlines.length === 0 ? <p>目前沒有可用新聞資料。</p> : data.headlines.map(item => <a key={`${item.url}-${item.title}`} href={item.url} target="_blank" rel="noreferrer"><strong>{item.title}</strong><span>{item.source}</span></a>)}</div></section>
+      <section className="observatory-section observatory-macro-section">
+        <div className="detail-section-title"><span>總經歷史圖表</span><small>資料來源：Yahoo Finance；{chartRange === "1Y" ? "最近 1 年" : `最近 ${CHART_RANGES.find(item => item.value === chartRange)?.label}`}交易日</small></div>
+        <div className="observatory-chart-range" role="group" aria-label="總經圖表時間區間">{CHART_RANGES.map(item => <button key={item.value} type="button" className={chartRange === item.value ? "selected" : ""} onClick={() => setChartRange(item.value)}>{item.label}</button>)}</div>
+        <div className="observatory-chart-grid">
+          <article className="observatory-chart-card"><strong>美國公債殖利率曲線</strong><div className="observatory-chart-legend"><span>13週</span><span>10年</span><span>30年</span></div>{yieldCurveData.length ? <ResponsiveContainer width="100%" height={220}><LineChart data={yieldCurveData}><CartesianGrid strokeDasharray="3 3" opacity={0.25} /><XAxis dataKey="date" hide /><YAxis width={42} tickFormatter={value => `${Number(value).toFixed(1)}%`} /><Tooltip formatter={(value: number) => `${value.toFixed(3)}%`} labelFormatter={label => `日期 ${label}`} /><Line type="monotone" dataKey="short" stroke="#7c3aed" dot={false} strokeWidth={2} name="13週" /><Line type="monotone" dataKey="tenYear" stroke="#2563eb" dot={false} strokeWidth={2} name="10年" /><Line type="monotone" dataKey="long" stroke="#0891b2" dot={false} strokeWidth={2} name="30年" /></LineChart></ResponsiveContainer> : <p className="empty-inline">等待殖利率歷史資料。</p>}</article>
+          <article className="observatory-chart-card"><strong>美元／台幣歷史走勢</strong><small>美元兌台幣（TWD=X）</small>{fxHistoryData.length ? <ResponsiveContainer width="100%" height={220}><LineChart data={fxHistoryData}><CartesianGrid strokeDasharray="3 3" opacity={0.25} /><XAxis dataKey="date" hide /><YAxis width={52} domain={["auto", "auto"]} /><Tooltip formatter={(value: number) => value.toFixed(4)} labelFormatter={label => `日期 ${label}`} /><Line type="monotone" dataKey="rate" stroke="#d97706" dot={false} strokeWidth={2} name="USD/TWD" /></LineChart></ResponsiveContainer> : <p className="empty-inline">等待美元／台幣歷史資料。</p>}</article>
+        </div>
+      </section>
+      <section className="observatory-section"><div className="detail-section-title"><span>今日新聞線索</span><small>資料來源：Google News RSS</small></div><div className="observatory-headlines">{data.headlines.length === 0 ? <p>目前沒有可用新聞資料。</p> : data.headlines.map(item => <a key={`${item.url}-${item.title}`} href={item.url} target="_blank" rel="noreferrer"><strong>{item.title}</strong><span>{item.source}</span></a>)}</div></section>
     </div>
 
     <section className="observatory-alert-section"><div className="detail-section-title"><span>{alertPreferences.enabled ? <BellRing size={17} /> : <Bell size={17} />} 異常通知設定</span><small>設定保存在此瀏覽器</small></div><div className="observatory-alert-controls"><label><input type="checkbox" checked={alertPreferences.enabled} onChange={event => setAlertPreferences(current => ({ ...current, enabled: event.target.checked }))} /> 啟用市場與總經異常提醒</label><label>市場變動門檻 <input type="number" min="0.1" max="20" step="0.1" value={alertPreferences.marketThreshold} onChange={event => setAlertPreferences(current => ({ ...current, marketThreshold: Number(event.target.value) }))} />%</label><label>總經指標門檻 <input type="number" min="0.1" max="10" step="0.1" value={alertPreferences.macroThreshold} onChange={event => setAlertPreferences(current => ({ ...current, macroThreshold: Number(event.target.value) }))} />%</label><button className="button outline" type="button" onClick={() => void requestNotifications()}>允許瀏覽器通知</button></div>{notificationMessage ? <p className="observatory-alert-message">{notificationMessage}</p> : <p className="observatory-alert-help">僅在瀏覽器允許通知、且最新資料超過門檻時提醒；不會在未經使用者操作下要求權限。</p>}</section>
 
-    <section className={triggeredAlerts.length > 0 ? "observatory-alert-banners" : "observatory-alert-empty"} aria-live="polite">{triggeredAlerts.length > 0 ? <><strong>異常警示</strong><div>{triggeredAlerts.map(item => <span className={`observatory-alert-badge ${isMacro(item.ticker) ? "macro" : "market"}`} key={item.ticker}><BellRing size={14} />{item.name} {percent(item.percentChange)}（門檻已觸發）</span>)}</div></> : <span>目前沒有標的超過已設定的市場／總經門檻。</span>}</section>
+    <section className={visibleTriggeredAlerts.length > 0 || ignoredTriggeredAlerts.length > 0 ? "observatory-alert-banners" : "observatory-alert-empty"} aria-live="polite">{visibleTriggeredAlerts.length > 0 ? <><strong>異常警示</strong><div className="observatory-alert-list">{visibleTriggeredAlerts.map(item => { const key = alertDispositionKey(item); const isRead = alertDisposition.read.includes(key); return <article className={`observatory-alert-item ${isRead ? "read" : ""}`} key={key}><div className="observatory-alert-badge-row"><span className={`observatory-alert-badge ${isMacro(item.ticker) ? "macro" : "market"}`}><BellRing size={14} />{item.name} {percent(item.percentChange)}（門檻已觸發）</span><span className="observatory-alert-status">{isRead ? "已讀" : "未讀"}</span></div><small>觸發日期：{item.quoteDate ?? "--"} · 資料來源：{alertSource}</small><div className="observatory-alert-actions">{!isRead ? <button type="button" onClick={() => markAlertRead(key)}>標記為已讀</button> : null}<button type="button" onClick={() => ignoreAlert(key)}>忽略</button></div></article>})}</div></> : null}{ignoredTriggeredAlerts.length > 0 ? <details className="observatory-alert-ignored"><summary>已忽略 {ignoredTriggeredAlerts.length} 則警示</summary>{ignoredTriggeredAlerts.map(item => { const key = alertDispositionKey(item); return <div key={key}><span>{item.name} · {item.quoteDate ?? "--"}</span><button type="button" onClick={() => restoreAlert(key)}>復原</button></div>})}</details> : null}{visibleTriggeredAlerts.length === 0 && ignoredTriggeredAlerts.length === 0 ? <span>目前沒有標的超過已設定的市場／總經門檻。</span> : null}</section>
 
     <section className="observatory-summary-section">
       <div className="detail-section-title"><span>每日財經摘要</span><small>依目前快照生成並保存至歷史紀錄</small></div>

@@ -1,4 +1,30 @@
 export const OBSERVATORY_ALERTS_KEY = "observatory-alert-preferences";
+export const OBSERVATORY_ALERT_STATE_KEY = "observatory-alert-state";
+
+export type ObservatoryAlertDisposition = { read: string[]; ignored: string[] };
+
+export const DEFAULT_ALERT_DISPOSITION: ObservatoryAlertDisposition = { read: [], ignored: [] };
+
+export function alertDispositionKey(alert: Pick<AlertQuote, "ticker" | "percentChange"> & { quoteDate?: string | null }) {
+  return `${alert.ticker}:${alert.quoteDate ?? "unknown"}:${alert.percentChange ?? "na"}`;
+}
+
+export function parseAlertDisposition(raw: string | null): ObservatoryAlertDisposition {
+  if (!raw) return DEFAULT_ALERT_DISPOSITION;
+  try {
+    const parsed = JSON.parse(raw) as Partial<ObservatoryAlertDisposition>;
+    return {
+      read: Array.isArray(parsed.read) ? parsed.read.filter((item): item is string => typeof item === "string").slice(-100) : [],
+      ignored: Array.isArray(parsed.ignored) ? parsed.ignored.filter((item): item is string => typeof item === "string").slice(-100) : [],
+    };
+  } catch {
+    return DEFAULT_ALERT_DISPOSITION;
+  }
+}
+
+export function serializeAlertDisposition(value: ObservatoryAlertDisposition) {
+  return JSON.stringify({ read: value.read.slice(-100), ignored: value.ignored.slice(-100) });
+}
 
 export type ObservatoryAlertPreferences = {
   enabled: boolean;
@@ -10,6 +36,7 @@ export type AlertQuote = {
   ticker: string;
   name: string;
   percentChange: number | null;
+  quoteDate?: string | null;
 };
 
 export const DEFAULT_ALERT_PREFERENCES: ObservatoryAlertPreferences = {

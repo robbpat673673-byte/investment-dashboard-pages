@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_ALERT_PREFERENCES, findTriggeredAlerts, parseAlertPreferences, requestObservatoryNotification, serializeAlertPreferences } from "./observatoryAlerts";
+import { DEFAULT_ALERT_DISPOSITION, DEFAULT_ALERT_PREFERENCES, alertDispositionKey, findTriggeredAlerts, parseAlertDisposition, parseAlertPreferences, requestObservatoryNotification, serializeAlertDisposition, serializeAlertPreferences } from "./observatoryAlerts";
 
 describe("observatory alert preferences", () => {
   it("parses and serializes bounded preferences", () => {
@@ -30,6 +30,14 @@ describe("observatory alert preferences", () => {
     expect(denied.message).toContain("通知權限未開啟");
     const unsupported = await requestObservatoryNotification({});
     expect(unsupported).toEqual({ permission: "unsupported", message: "此瀏覽器不支援通知。" });
+  });
+
+  it("round trips alert read and ignored state with a stable dated key", () => {
+    const key = alertDispositionKey({ ticker: "^TNX", percentChange: 1.2, quoteDate: "2026-08-16" });
+    const state = { read: [key], ignored: ["TWD=X:2026-08-15:-0.3"] };
+    expect(parseAlertDisposition(serializeAlertDisposition(state))).toEqual(state);
+    expect(parseAlertDisposition("bad-json")).toEqual(DEFAULT_ALERT_DISPOSITION);
+    expect(alertDispositionKey({ ticker: "^TNX", percentChange: 1.2, quoteDate: "2026-08-17" })).not.toBe(key);
   });
 
   it("does not alert while disabled or when quote data is unavailable", () => {
