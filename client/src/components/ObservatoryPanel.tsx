@@ -21,6 +21,7 @@ const time = (value: string | Date | null) => value ? new Intl.DateTimeFormat("z
 const dateKey = (value: string | Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
 const dateLabel = (value: string | Date) => new Intl.DateTimeFormat("zh-TW", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
 const isMacro = (ticker: string) => ["TWD=X", "DX-Y.NYB", "^IRX", "^TNX", "^TYX"].includes(ticker);
+const QUICK_PROMPTS = ["依本頁資料整理今日市場趨勢", "美元指數、台幣與美債殖利率有何變化？", "請生成今日財經摘要重點", "哪些新聞線索值得持續追蹤？", "請說明目前資料的風險與限制"];
 
 export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }) {
   const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: OBSERVATORY_GREETING }]);
@@ -72,8 +73,8 @@ export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }
     </section>
 
     <div className="observatory-chat-layout">
-      <section className="observatory-chat-intro"><span className="observatory-kicker">交談式整理</span><h2>詢問財經小智</h2><p>可請它整理市場趨勢、解讀本頁新聞脈絡，或說明目前資料限制。回覆僅基於本頁快照，並會附上來源與風險限制。</p><ul><li>市場趨勢：以當前資料快照說明上漲與下跌標的。</li><li>總經解讀：查看匯率、美元指數與殖利率的當日變化。</li><li>新聞摘要：依本頁列出的 RSS 新聞標題與來源整理。</li></ul></section>
-      <AIChatBox messages={messages} onSendMessage={send} isLoading={chat.isPending} height="470px" className="observatory-chat" placeholder="例如：依本頁資料整理今日市場觀察" suggestedPrompts={["依本頁資料整理今日市場趨勢", "美元指數、台幣與美債殖利率有何變化？", "請生成今日財經摘要重點", "哪些新聞線索值得持續追蹤？", "請說明目前資料的風險與限制"]} />
+      <section className="observatory-chat-intro"><span className="observatory-kicker">交談式整理</span><h2>詢問財經小智</h2><p>可請它整理市場趨勢、解讀本頁新聞脈絡，或說明目前資料限制。回覆僅基於本頁快照，並會附上來源與風險限制。</p><ul><li>市場趨勢：以當前資料快照說明上漲與下跌標的。</li><li>總經解讀：查看匯率、美元指數與殖利率的當日變化。</li><li>新聞摘要：依本頁列出的 RSS 新聞標題與來源整理。</li></ul><div className="observatory-quick-prompts" aria-label="財經小智快速提問"><strong>快速提問</strong><div>{QUICK_PROMPTS.map(prompt => <button key={prompt} type="button" onClick={() => send(prompt)} disabled={chat.isPending}>{prompt}</button>)}</div></div></section>
+      <AIChatBox messages={messages} onSendMessage={send} isLoading={chat.isPending} height="470px" className="observatory-chat" placeholder="例如：依本頁資料整理今日市場觀察" />
     </div>
 
     <section className="observatory-sources"><div className="detail-section-title"><span>資料來源與使用限制</span><small>可追溯資料</small></div>{data.sources.map(source => <div className="observatory-source" key={source.label}><div><strong>{source.label}</strong><p>{source.detail}</p></div>{source.url ? <a href={source.url} target="_blank" rel="noreferrer">開啟來源</a> : null}</div>)}<p className="observatory-disclaimer">本頁內容為資料整理與一般性研究觀察，並非個人化投資建議。市場有風險，重要決策前請自行查證並諮詢合格專業人士。</p></section>

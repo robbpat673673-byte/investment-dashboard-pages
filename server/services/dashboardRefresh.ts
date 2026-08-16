@@ -227,24 +227,33 @@ async function fetchNews() {
 
 async function fetchMarketQuote(config: (typeof MARKET_CONFIG)[number]) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(config.ticker)}?range=5d&interval=1d`;
-  const payload = JSON.parse(await fetchText(url)) as { chart?: { result?: Array<{ timestamp?: number[]; indicators?: { quote?: Array<{ close?: Array<number | null> }> } }> } };
-  const chart = payload.chart?.result?.[0];
-  const closes = chart?.indicators?.quote?.[0]?.close ?? [];
-  const timestamps = chart?.timestamp ?? [];
-  const points = closes
-    .map((close, index) => ({ close, timestamp: timestamps[index] }))
-    .filter((point): point is { close: number; timestamp: number } => typeof point.close === "number" && typeof point.timestamp === "number");
-  if (points.length < 2) throw new Error("可用收盤價不足兩筆");
-  const latest = points.at(-1)!;
-  const previous = points.at(-2)!;
-  const change = latest.close - previous.close;
-  return {
-    ...config,
-    price: latest.close,
-    change,
-    percentChange: previous.close === 0 ? 0 : (change / previous.close) * 100,
-    quoteDate: new Intl.DateTimeFormat("zh-TW", { timeZone: "Asia/Taipei", month: "2-digit", day: "2-digit" }).format(new Date(latest.timestamp * 1000)),
-  };
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const payload = JSON.parse(await fetchText(url)) as { chart?: { result?: Array<{ timestamp?: number[]; indicators?: { quote?: Array<{ close?: Array<number | null> }> } }> } };
+      const chart = payload.chart?.result?.[0];
+      const closes = chart?.indicators?.quote?.[0]?.close ?? [];
+      const timestamps = chart?.timestamp ?? [];
+      const points = closes
+        .map((close, index) => ({ close, timestamp: timestamps[index] }))
+        .filter((point): point is { close: number; timestamp: number } => typeof point.close === "number" && typeof point.timestamp === "number");
+      if (points.length < 2) throw new Error("可用收盤價不足兩筆");
+      const latest = points.at(-1)!;
+      const previous = points.at(-2)!;
+      const change = latest.close - previous.close;
+      return {
+        ...config,
+        price: latest.close,
+        change,
+        percentChange: previous.close === 0 ? 0 : (change / previous.close) * 100,
+        quoteDate: new Intl.DateTimeFormat("zh-TW", { timeZone: "Asia/Taipei", month: "2-digit", day: "2-digit" }).format(new Date(latest.timestamp * 1000)),
+      };
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await sleep(1200 * (attempt + 1));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("行情更新失敗");
 }
 
 export async function refreshDashboardData() {
