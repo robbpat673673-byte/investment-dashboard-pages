@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { filterMacroHistoryByDays } from "./observatoryChart";
+import { filterMacroHistoryByDays, parseChartRange, serializeChartRange } from "./observatoryChart";
 
 describe("macro chart calendar range", () => {
+  it("parses and serializes the browser range preference safely", () => {
+    expect(parseChartRange("1Y")).toBe("1Y");
+    expect(parseChartRange("bad")).toBe("3M");
+    expect(parseChartRange(null)).toBe("3M");
+    expect(serializeChartRange("6M")).toBe("6M");
+  });
   const points = [
     { date: "2026-01-01", close: 1 },
     { date: "2026-01-15", close: 2 },

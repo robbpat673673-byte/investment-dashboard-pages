@@ -140,6 +140,13 @@ describe("Home 觀測站", () => {
     expect(screen.getByRole("button", { name: "忽略" })).toBeTruthy();
   });
 
+  it("重載觀測站時還原瀏覽器保存的圖表區間", () => {
+    window.localStorage.setItem("investment-dashboard-observatory-chart-range", "1Y");
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "觀測站" }));
+    expect(screen.getByText(/最近 1 年交易日/)).toBeTruthy();
+  });
+
   it("支援 1 個月、3 個月、6 個月與 1 年圖表區間", () => {
     render(<Home />);
     fireEvent.click(screen.getByRole("button", { name: "觀測站" }));
@@ -160,6 +167,45 @@ describe("Home 觀測站", () => {
     expect(screen.getByRole("button", { name: "1年" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "標記為已讀" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "忽略" })).toBeTruthy();
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
+  });
+
+  it("可從觀測站入口開啟警示歷史並篩選後返回", () => {
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "觀測站" }));
+    fireEvent.click(screen.getByRole("button", { name: "查看警示歷史" }));
+    expect(screen.getByRole("heading", { name: "警示歷史紀錄" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "返回觀測站" }));
+    expect(screen.getByRole("heading", { name: "觀測站" })).toBeTruthy();
+  });
+
+  it("可從主導覽開啟警示歷史並篩選後返回觀測站", () => {
+    window.localStorage.setItem("investment-dashboard-observatory-alert-history", JSON.stringify([{ key: "^TNX:2026-08-16:1.19", ticker: "^TNX", name: "美國 10 年期公債殖利率", percentChange: 1.19, quoteDate: "2026-08-16", source: "市場行情", triggeredAt: "2026-08-16T05:00:00.000Z" }]));
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "警示歷史" }));
+    expect(screen.getByRole("heading", { name: "警示歷史紀錄" })).toBeTruthy();
+    expect(screen.getByText("美國 10 年期公債殖利率")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "已讀" }));
+    expect(screen.getByText(/目前沒有符合條件/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "返回觀測站" }));
+    expect(screen.getByRole("heading", { name: "觀測站" })).toBeTruthy();
+  });
+
+  it("在 375px 下可查看有紀錄的警示歷史並操作狀態篩選", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    window.localStorage.setItem("investment-dashboard-observatory-alert-history", JSON.stringify([{ key: "^TNX:2026-08-16:1.19", ticker: "^TNX", name: "美國 10 年期公債殖利率", percentChange: 1.19, quoteDate: "2026-08-16", source: "市場行情", triggeredAt: "2026-08-16T05:00:00.000Z" }]));
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "警示歷史" }));
+    expect(screen.getByText("美國 10 年期公債殖利率")).toBeTruthy();
+    expect(screen.getByText(/觸發日期：2026-08-16/)).toBeTruthy();
+    expect(screen.getByText(/資料來源：市場行情/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "未讀" }));
+    expect(screen.getByText("美國 10 年期公債殖利率")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "標記為已讀" }));
+    fireEvent.click(screen.getByRole("button", { name: "已讀" }));
+    expect(screen.getAllByText("已讀").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "返回觀測站" }));
+    expect(screen.getByRole("heading", { name: "觀測站" })).toBeTruthy();
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
   });
 

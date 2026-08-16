@@ -1,4 +1,15 @@
 export type DatedMacroPoint = { date: string; [key: string]: unknown };
+export const OBSERVATORY_CHART_RANGE_KEY = "investment-dashboard-observatory-chart-range";
+export const OBSERVATORY_CHART_RANGES = ["1M", "3M", "6M", "1Y"] as const;
+export type ObservatoryChartRange = (typeof OBSERVATORY_CHART_RANGES)[number];
+
+export function parseChartRange(value: string | null): ObservatoryChartRange {
+  return OBSERVATORY_CHART_RANGES.includes(value as ObservatoryChartRange) ? value as ObservatoryChartRange : "3M";
+}
+
+export function serializeChartRange(value: ObservatoryChartRange): string {
+  return value;
+}
 
 /**
  * Filters a macro series by calendar days ending on the latest valid point.

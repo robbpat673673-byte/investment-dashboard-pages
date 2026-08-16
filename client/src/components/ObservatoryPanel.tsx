@@ -1,8 +1,9 @@
 import { AIChatBox, type Message } from "@/components/AIChatBox";
 import { appendObservatoryMessage, createObservatoryChatRequest, OBSERVATORY_CHAT_ERROR, OBSERVATORY_GREETING } from "@/lib/observatoryChat";
 import { OBSERVATORY_CHAT_HISTORY_KEY, parseObservatoryChatHistory, serializeObservatoryChatHistory, upsertObservatoryChatSession, type ObservatoryChatSession } from "@/lib/observatoryChatHistory";
+import { OBSERVATORY_ALERT_HISTORY_KEY, mergeAlertHistory, parseAlertHistory, serializeAlertHistory } from "@/lib/observatoryAlertHistory";
 import { DEFAULT_ALERT_PREFERENCES, OBSERVATORY_ALERTS_KEY, OBSERVATORY_ALERT_STATE_KEY, alertDispositionKey, findTriggeredAlerts, parseAlertDisposition, parseAlertPreferences, requestObservatoryNotification, serializeAlertDisposition, serializeAlertPreferences, type ObservatoryAlertDisposition, type ObservatoryAlertPreferences } from "@/lib/observatoryAlerts";
-import { filterMacroHistoryByDays } from "@/lib/observatoryChart";
+import { filterMacroHistoryByDays, OBSERVATORY_CHART_RANGE_KEY, parseChartRange, serializeChartRange, type ObservatoryChartRange } from "@/lib/observatoryChart";
 import { trpc } from "@/lib/trpc";
 import { Bell, BellRing } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
@@ -31,7 +32,7 @@ const isMacro = (ticker: string) => ["TWD=X", "DX-Y.NYB", "^IRX", "^TNX", "^TYX"
 const QUICK_PROMPTS = ["分析今日摘要", "依本頁資料整理今日市場趨勢", "美元指數、台幣與美債殖利率有何變化？", "請生成今日財經摘要重點", "哪些新聞線索值得持續追蹤？", "請說明目前資料的風險與限制"];
 const CHART_RANGES = [{ value: "1M", label: "1個月", days: 31 }, { value: "3M", label: "3個月", days: 92 }, { value: "6M", label: "6個月", days: 184 }, { value: "1Y", label: "1年", days: 366 }] as const;
 
-export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }) {
+export function ObservatoryPanel({ data, onOpenAlertHistory }: { data: ObservatoryData | undefined; onOpenAlertHistory?: () => void }) {
   const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: OBSERVATORY_GREETING }]);
   const [chatHistory, setChatHistory] = useState<ObservatoryChatSession[]>(() => parseObservatoryChatHistory(typeof window === "undefined" ? null : window.localStorage.getItem(OBSERVATORY_CHAT_HISTORY_KEY)));
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -56,7 +57,7 @@ export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }
   const [alertPreferences, setAlertPreferences] = useState<ObservatoryAlertPreferences>(() => parseAlertPreferences(typeof window === "undefined" ? null : window.localStorage.getItem(OBSERVATORY_ALERTS_KEY)));
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
   const [alertDisposition, setAlertDisposition] = useState<ObservatoryAlertDisposition>(() => parseAlertDisposition(typeof window === "undefined" ? null : window.localStorage.getItem(OBSERVATORY_ALERT_STATE_KEY)));
-  const [chartRange, setChartRange] = useState<"1M" | "3M" | "6M" | "1Y">("3M");
+  const [chartRange, setChartRange] = useState<ObservatoryChartRange>(() => parseChartRange(typeof window === "undefined" ? null : window.localStorage.getItem(OBSERVATORY_CHART_RANGE_KEY)));
   const rangeDays = chartRange === "1M" ? 31 : chartRange === "3M" ? 92 : chartRange === "6M" ? 184 : 366;
   const yieldCurveData = useMemo(() => {
     const byDate = new Map<string, { date: string; short?: number; tenYear?: number; long?: number }>();
@@ -79,6 +80,17 @@ export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }
   useEffect(() => {
     window.localStorage.setItem(OBSERVATORY_ALERTS_KEY, serializeAlertPreferences(alertPreferences));
   }, [alertPreferences]);
+
+  useEffect(() => {
+    window.localStorage.setItem(OBSERVATORY_CHART_RANGE_KEY, serializeChartRange(chartRange));
+  }, [chartRange]);
+
+  useEffect(() => {
+    if (!triggeredAlerts.length) return;
+    const existing = parseAlertHistory(window.localStorage.getItem(OBSERVATORY_ALERT_HISTORY_KEY));
+    const incoming = triggeredAlerts.map(item => ({ key: alertDispositionKey(item), ticker: item.ticker, name: item.name, percentChange: item.percentChange, quoteDate: item.quoteDate ?? null, source: alertSource, triggeredAt: new Date().toISOString() }));
+    window.localStorage.setItem(OBSERVATORY_ALERT_HISTORY_KEY, serializeAlertHistory(mergeAlertHistory(existing, incoming)));
+  }, [alertSource, triggeredAlerts]);
 
   useEffect(() => {
     if (!messages.some(message => message.role === "user")) return;
@@ -149,7 +161,7 @@ export function ObservatoryPanel({ data }: { data: ObservatoryData | undefined }
       <section className="observatory-section"><div className="detail-section-title"><span>今日新聞線索</span><small>資料來源：Google News RSS</small></div><div className="observatory-headlines">{data.headlines.length === 0 ? <p>目前沒有可用新聞資料。</p> : data.headlines.map(item => <a key={`${item.url}-${item.title}`} href={item.url} target="_blank" rel="noreferrer"><strong>{item.title}</strong><span>{item.source}</span></a>)}</div></section>
     </div>
 
-    <section className="observatory-alert-section"><div className="detail-section-title"><span>{alertPreferences.enabled ? <BellRing size={17} /> : <Bell size={17} />} 異常通知設定</span><small>設定保存在此瀏覽器</small></div><div className="observatory-alert-controls"><label><input type="checkbox" checked={alertPreferences.enabled} onChange={event => setAlertPreferences(current => ({ ...current, enabled: event.target.checked }))} /> 啟用市場與總經異常提醒</label><label>市場變動門檻 <input type="number" min="0.1" max="20" step="0.1" value={alertPreferences.marketThreshold} onChange={event => setAlertPreferences(current => ({ ...current, marketThreshold: Number(event.target.value) }))} />%</label><label>總經指標門檻 <input type="number" min="0.1" max="10" step="0.1" value={alertPreferences.macroThreshold} onChange={event => setAlertPreferences(current => ({ ...current, macroThreshold: Number(event.target.value) }))} />%</label><button className="button outline" type="button" onClick={() => void requestNotifications()}>允許瀏覽器通知</button></div>{notificationMessage ? <p className="observatory-alert-message">{notificationMessage}</p> : <p className="observatory-alert-help">僅在瀏覽器允許通知、且最新資料超過門檻時提醒；不會在未經使用者操作下要求權限。</p>}</section>
+    <section className="observatory-alert-section"><div className="detail-section-title"><span>{alertPreferences.enabled ? <BellRing size={17} /> : <Bell size={17} />} 異常通知設定</span><small>設定保存在此瀏覽器</small></div><div className="observatory-alert-controls"><label><input type="checkbox" checked={alertPreferences.enabled} onChange={event => setAlertPreferences(current => ({ ...current, enabled: event.target.checked }))} /> 啟用市場與總經異常提醒</label><label>市場變動門檻 <input type="number" min="0.1" max="20" step="0.1" value={alertPreferences.marketThreshold} onChange={event => setAlertPreferences(current => ({ ...current, marketThreshold: Number(event.target.value) }))} />%</label><label>總經指標門檻 <input type="number" min="0.1" max="10" step="0.1" value={alertPreferences.macroThreshold} onChange={event => setAlertPreferences(current => ({ ...current, macroThreshold: Number(event.target.value) }))} />%</label><button className="button outline" type="button" onClick={() => void requestNotifications()}>允許瀏覽器通知</button>{onOpenAlertHistory ? <button className="button outline" type="button" onClick={onOpenAlertHistory}>查看警示歷史</button> : null}</div>{notificationMessage ? <p className="observatory-alert-message">{notificationMessage}</p> : <p className="observatory-alert-help">僅在瀏覽器允許通知、且最新資料超過門檻時提醒；不會在未經使用者操作下要求權限。</p>}</section>
 
     <section className={visibleTriggeredAlerts.length > 0 || ignoredTriggeredAlerts.length > 0 ? "observatory-alert-banners" : "observatory-alert-empty"} aria-live="polite">{visibleTriggeredAlerts.length > 0 ? <><strong>異常警示</strong><div className="observatory-alert-list">{visibleTriggeredAlerts.map(item => { const key = alertDispositionKey(item); const isRead = alertDisposition.read.includes(key); return <article className={`observatory-alert-item ${isRead ? "read" : ""}`} key={key}><div className="observatory-alert-badge-row"><span className={`observatory-alert-badge ${isMacro(item.ticker) ? "macro" : "market"}`}><BellRing size={14} />{item.name} {percent(item.percentChange)}（門檻已觸發）</span><span className="observatory-alert-status">{isRead ? "已讀" : "未讀"}</span></div><small>觸發日期：{item.quoteDate ?? "--"} · 資料來源：{alertSource}</small><div className="observatory-alert-actions">{!isRead ? <button type="button" onClick={() => markAlertRead(key)}>標記為已讀</button> : null}<button type="button" onClick={() => ignoreAlert(key)}>忽略</button></div></article>})}</div></> : null}{ignoredTriggeredAlerts.length > 0 ? <details className="observatory-alert-ignored"><summary>已忽略 {ignoredTriggeredAlerts.length} 則警示</summary>{ignoredTriggeredAlerts.map(item => { const key = alertDispositionKey(item); return <div key={key}><span>{item.name} · {item.quoteDate ?? "--"}</span><button type="button" onClick={() => restoreAlert(key)}>復原</button></div>})}</details> : null}{visibleTriggeredAlerts.length === 0 && ignoredTriggeredAlerts.length === 0 ? <span>目前沒有標的超過已設定的市場／總經門檻。</span> : null}</section>
 
