@@ -122,6 +122,21 @@ describe("Home 觀測站", () => {
     fireEvent.change(sourceSelect, { target: { value: "華爾街日報・市場" } });
     expect(screen.getAllByText("華爾街日報市場測試標題").length).toBeGreaterThan(0);
     expect(screen.queryByText("CNBC 市場測試標題")).toBeNull();
+    fireEvent.change(sourceSelect, { target: { value: "all" } });
+    const favoriteButtons = Array.from(document.querySelectorAll(".news-action-button")).filter(button => button.textContent === "收藏") as HTMLButtonElement[];
+    fireEvent.click(favoriteButtons[0]);
+    expect(Array.from(document.querySelectorAll(".news-action-button")).filter(button => button.textContent === "已收藏").length).toBeGreaterThan(0);
+    const favoritesFilter = document.querySelector('[aria-label="新聞管理狀態"] button:nth-child(2)') as HTMLButtonElement;
+    fireEvent.click(favoritesFilter);
+    expect(document.querySelectorAll(".news-item").length).toBe(1);
+    const allNewsFilter = document.querySelector('[aria-label="新聞管理狀態"] button:nth-child(1)') as HTMLButtonElement;
+    fireEvent.click(allNewsFilter);
+    const readLaterButtons = Array.from(document.querySelectorAll(".news-action-button")).filter(button => button.textContent === "稍後閱讀") as HTMLButtonElement[];
+    fireEvent.click(readLaterButtons[0]);
+    const readLaterFilter = document.querySelector('[aria-label="新聞管理狀態"] button:nth-child(3)') as HTMLButtonElement;
+    fireEvent.click(readLaterFilter);
+    expect(document.querySelectorAll(".news-item").length).toBe(1);
+    expect(Array.from(document.querySelectorAll(".news-action-button")).some(button => button.textContent === "已加入稍後閱讀")).toBe(true);
   });
 
   it("觀測站提供警示快捷門檻與財經小智匯出控制", () => {

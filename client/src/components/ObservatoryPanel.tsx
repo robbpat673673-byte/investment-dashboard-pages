@@ -34,7 +34,7 @@ const QUICK_PROMPTS = ["分析今日摘要", "依本頁資料整理今日市場�
 const CHART_RANGES = [{ value: "1M", label: "1個月", days: 31 }, { value: "3M", label: "3個月", days: 92 }, { value: "6M", label: "6個月", days: 184 }, { value: "1Y", label: "1年", days: 366 }] as const;
 const ALERT_PRESETS = [{ label: "保守", marketThreshold: 1, macroThreshold: 0.5 }, { label: "平衡", marketThreshold: 2, macroThreshold: 1 }, { label: "寬鬆", marketThreshold: 3, macroThreshold: 1.5 }] as const;
 
-export function ObservatoryPanel({ data, onOpenAlertHistory }: { data: ObservatoryData | undefined; onOpenAlertHistory?: () => void }) {
+export function ObservatoryPanel({ data, news = [], onOpenAlertHistory }: { data: ObservatoryData | undefined; news?: Array<{ title: string; source: string; url: string; publishedAt: Date | string | null }>; onOpenAlertHistory?: () => void }) {
   const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: OBSERVATORY_GREETING }]);
   const [chatHistory, setChatHistory] = useState<ObservatoryChatSession[]>(() => parseObservatoryChatHistory(typeof window === "undefined" ? null : window.localStorage.getItem(OBSERVATORY_CHAT_HISTORY_KEY)));
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -121,8 +121,9 @@ export function ObservatoryPanel({ data, onOpenAlertHistory }: { data: Observato
   const restoreAlert = (key: string) => setAlertDisposition(current => ({ ...current, ignored: current.ignored.filter(item => item !== key) }));
 
   const applyAlertPreset = (marketThreshold: number, macroThreshold: number) => setAlertPreferences(current => ({ ...current, marketThreshold, macroThreshold }));
-  const exportCurrentChatMarkdown = () => { downloadMarkdown(`financial-ai-${new Date().toISOString().slice(0, 10)}.md`, observatoryMessagesToMarkdown(messages)); setExportMessage("Markdown 已開始下載。"); };
-  const exportCurrentChatPdf = () => { setExportMessage(openPrintPdfPreview("財經小智分析紀錄", observatoryMessagesToMarkdown(messages)) ? "已開啟列印視窗，請選擇另存為 PDF。" : "瀏覽器封鎖了列印視窗，請允許此網站開啟彈出視窗後再試。 "); };
+  const exportContent = () => observatoryMessagesToMarkdown(messages, new Date(), { asOf: data?.asOf ?? null, highlights: data?.highlights ?? [] }, [...(data?.sources ?? []), ...news.slice(0, 10).map(item => ({ label: item.source, detail: `${item.title}｜發布時間：${item.publishedAt ?? "未提供"}`, url: item.url }))]);
+  const exportCurrentChatMarkdown = () => { downloadMarkdown(`financial-ai-${new Date().toISOString().slice(0, 10)}.md`, exportContent()); setExportMessage("Markdown 已開始下載。"); };
+  const exportCurrentChatPdf = () => { setExportMessage(openPrintPdfPreview("財經小智分析紀錄", exportContent()) ? "已開啟列印視窗，請選擇另存為 PDF。" : "瀏覽器封鎖了列印視窗，請允許此網站開啟彈出視窗後再試。 "); };
 
   const requestNotifications = async () => {
     const result = await requestObservatoryNotification();

@@ -175,3 +175,13 @@ html.dark .observatory-summary-actions .button{color:#07101e}
   .observatory-alert-shortcuts button, .observatory-export-actions button { width: 100%; }
   .observatory-export-actions strong { margin-right: 0; }
 }
+
+
+.news-preference-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.news-item-actions { display: flex; gap: 0.45rem; margin-top: 0.55rem; }
+.news-action-button { border: 1px solid var(--border); border-radius: 0.4rem; padding: 0.3rem 0.55rem; background: transparent; color: var(--muted-foreground); cursor: pointer; font-size: 0.78rem; }
+.news-action-button:hover, .news-action-button[aria-pressed="true"] { border-color: var(--primary); color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
+@media (max-width: 600px) {
+  .news-preference-chips { width: 100%; }
+  .news-item-actions { flex-wrap: wrap; }
+}

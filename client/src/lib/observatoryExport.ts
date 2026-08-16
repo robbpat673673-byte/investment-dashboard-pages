@@ -1,15 +1,21 @@
 export type ExportMessage = { role: "user" | "assistant" | "system"; content: string };
+export type ExportMarketSnapshot = { asOf: string | Date | null; highlights: Array<{ name: string; ticker: string; price: number | null; percentChange: number | null; quoteDate: string | null }> };
+export type ExportSource = { label: string; detail: string; url: string | null };
 
 function escapeMarkdown(value: string) {
   return value.replace(/\r/g, "").trim();
 }
 
-export function observatoryMessagesToMarkdown(messages: ExportMessage[], exportedAt = new Date()) {
+export function observatoryMessagesToMarkdown(messages: ExportMessage[], exportedAt = new Date(), snapshot?: ExportMarketSnapshot, sources: ExportSource[] = []) {
+  const snapshotLines = snapshot ? ["## 當日市場快照", "", `資料快照時間：${snapshot.asOf ? new Date(snapshot.asOf).toISOString() : "未提供"}`, "", ...snapshot.highlights.map(item => `- ${item.name}（${item.ticker}）：${item.price === null ? "--" : item.price}；漲跌幅 ${item.percentChange === null ? "--" : `${item.percentChange > 0 ? "+" : ""}${item.percentChange.toFixed(2)}%`}；報價日期 ${item.quoteDate ?? "--"}`), ""] : [];
+  const sourceLines = ["## 引用來源", "", ...(sources.length ? sources.flatMap(source => [`- ${source.label}：${source.detail}${source.url ? `（${source.url}）` : ""}`]) : ["- 本次快照未提供額外來源資訊。"]), ""];
   const lines = [
     "# 財經小智分析紀錄",
     "",
     `匯出時間：${exportedAt.toISOString()}`,
     "",
+    ...snapshotLines,
+    ...sourceLines,
     ...messages.flatMap(message => [
       `## ${message.role === "user" ? "提問" : message.role === "system" ? "系統脈絡" : "財經小智分析"}`,
       "",
