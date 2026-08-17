@@ -13,6 +13,7 @@ const observatoryMessage = z.object({
   content: z.string().trim().min(1).max(1200),
 });
 const observatoryChatVisits = new Map<string, number[]>();
+const newsSummaryVisits = new Map<string, number[]>();
 
 function assertObservatoryChatQuota(address: string) {
   const now = Date.now();
@@ -20,6 +21,14 @@ function assertObservatoryChatQuota(address: string) {
   if (recent.length >= 8) throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "觀測站問答已達暫時使用上限，請稍後再試。" });
   recent.push(now);
   observatoryChatVisits.set(address, recent);
+}
+
+function assertNewsSummaryQuota(address: string) {
+  const now = Date.now();
+  const recent = (newsSummaryVisits.get(address) ?? []).filter(at => now - at < 5 * 60_000);
+  if (recent.length >= 12) throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "新聞摘要暫時達到使用上限，請稍後再試。" });
+  recent.push(now);
+  newsSummaryVisits.set(address, recent);
 }
 
 export const appRouter = router({
@@ -41,6 +50,16 @@ export const appRouter = router({
   }),
 
   observatory: router({
+    summarizeNews: publicProcedure.input(z.object({ id: z.string().trim().min(1).max(200), title: z.string().trim().min(1).max(300), summary: z.string().trim().max(1800).default(""), source: z.string().trim().max(160), publishedAt: z.string().max(80).nullable().optional() })).mutation(async ({ input, ctx }) => {
+      assertNewsSummaryQuota(ctx.req.ip || "anonymous");
+      const completion = await invokeLLM({ model: "gpt-5-mini", messages: [
+        { role: "system", content: "你是財經新聞摘要助手。只根據提供的標題、公開摘要、來源與時間，使用繁體中文輸出三點：核心重點、可能影響、資料限制。不得補充未提供的事實，不提供個人化投資建議。總長度 120 字內。" },
+        { role: "user", content: `來源：${input.source}\n發布時間：${input.publishedAt ?? "未提供"}\n標題：${input.title}\n公開摘要：${input.summary || "未提供"}` },
+      ] });
+      const answer = completion.choices[0]?.message.content;
+      if (typeof answer !== "string" || !answer.trim()) throw new Error("新聞摘要暫時無法產生");
+      return { summary: answer.trim() };
+    }),
     chat: publicProcedure.input(z.object({ messages: z.array(observatoryMessage).min(1).max(6) })).mutation(async ({ input, ctx }) => {
       assertObservatoryChatQuota(ctx.req.ip || "anonymous");
       const dashboard = await getPublicDashboardData();

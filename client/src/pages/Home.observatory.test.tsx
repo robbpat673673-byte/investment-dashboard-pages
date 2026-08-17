@@ -25,6 +25,8 @@ vi.mock("@/lib/observatoryExport", () => ({
   openPrintPdfPreview: exportState.print,
 }));
 
+const newsSummaryState = vi.hoisted(() => ({ mode: "success" as "success" | "error" }));
+
 const summaryState = vi.hoisted(() => ({
   mode: "success" as "success" | "error",
   generated: null as null | { id: number; summaryDate: string; generatedAt: string; snapshotAsOf: string; content: string; sources: unknown[] },
@@ -66,6 +68,7 @@ vi.mock("@/lib/trpc", () => ({
       },
     },
     observatory: {
+      summarizeNews: { useMutation: (options: { onSuccess?: (value: { summary: string }, variables: { id: string; title: string; source: string }) => void; onError?: (error: Error, variables: { id: string; title: string; source: string }) => void }) => ({ isPending: false, mutate: (variables: { id: string; title: string; source: string }) => newsSummaryState.mode === "success" ? options.onSuccess?.({ summary: "核心重點：測試摘要。可能影響：需持續觀察。資料限制：僅依公開摘要。" }, variables) : options.onError?.(new Error("新聞摘要暫時無法產生"), variables) }) },
       chat: {
         useMutation: (options: { onSuccess?: (value: { answer: string }) => void; onError?: (error: Error) => void }) => ({
           isPending: false,
@@ -96,6 +99,7 @@ afterEach(() => {
   mutationState.mode = "success";
   mutationState.calls = [];
   summaryState.mode = "success";
+  newsSummaryState.mode = "success";
   summaryState.generated = null;
   summaryState.refetch.mockReset();
   window.localStorage.clear();
@@ -322,6 +326,29 @@ describe("Home 觀測站", () => {
     render(<Home />);
     fireEvent.click(screen.getByRole("button", { name: "觀測站" }));
     fireEvent.click(screen.getByRole("button", { name: "依本頁資料整理今日市場趨勢" }));
-    await waitFor(() => expect(screen.getByText("提問過於頻繁，請稍後再試。")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("提問過於頻繁，請稍後再試。" )).toBeTruthy());
+  });
+  it("新聞頁可顯示 AI 摘要並提供新聞管理入口", async () => {
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "財經即時新聞" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "AI 摘要" })[0]);
+    await waitFor(() => expect(screen.getByText("核心重點：測試摘要。可能影響：需持續觀察。資料限制：僅依公開摘要。")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "新聞管理" }));
+    expect(screen.getByText("收藏與稍後閱讀")).toBeTruthy();
+  });
+  it("新聞 AI 摘要失敗時顯示同一則新聞的錯誤提示", async () => {
+    newsSummaryState.mode = "error";
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "財經即時新聞" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "AI 摘要" })[0]);
+    await waitFor(() => expect(screen.getByText("新聞摘要暫時無法產生")).toBeTruthy());
+  });
+  it("觀測站可切換新聞匯出範圍", () => {
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "觀測站" }));
+    const select = screen.getByRole("combobox", { name: "新聞引用範圍" }) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "favorites" } });
+    expect(select.value).toBe("favorites");
+    expect(screen.getByText(/僅收藏/)).toBeTruthy();
   });
 });

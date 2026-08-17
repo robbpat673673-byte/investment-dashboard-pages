@@ -10,6 +10,8 @@ import { Bell, BellRing } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+type NewsExportItem = { title: string; summary?: string | null; source: string; url: string; publishedAt: Date | string | null };
+
 type ObservatoryData = {
   asOf: string | null;
   pulse: "偏多" | "偏弱" | "中性";
@@ -34,7 +36,7 @@ const QUICK_PROMPTS = ["分析今日摘要", "依本頁資料整理今日市場�
 const CHART_RANGES = [{ value: "1M", label: "1個月", days: 31 }, { value: "3M", label: "3個月", days: 92 }, { value: "6M", label: "6個月", days: 184 }, { value: "1Y", label: "1年", days: 366 }] as const;
 const ALERT_PRESETS = [{ label: "保守", marketThreshold: 1, macroThreshold: 0.5 }, { label: "平衡", marketThreshold: 2, macroThreshold: 1 }, { label: "寬鬆", marketThreshold: 3, macroThreshold: 1.5 }] as const;
 
-export function ObservatoryPanel({ data, news = [], onOpenAlertHistory }: { data: ObservatoryData | undefined; news?: Array<{ title: string; source: string; url: string; publishedAt: Date | string | null }>; onOpenAlertHistory?: () => void }) {
+export function ObservatoryPanel({ data, news = [], favoriteNews = [], onOpenAlertHistory }: { data: ObservatoryData | undefined; news?: NewsExportItem[]; favoriteNews?: NewsExportItem[]; onOpenAlertHistory?: () => void }) {
   const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: OBSERVATORY_GREETING }]);
   const [chatHistory, setChatHistory] = useState<ObservatoryChatSession[]>(() => parseObservatoryChatHistory(typeof window === "undefined" ? null : window.localStorage.getItem(OBSERVATORY_CHAT_HISTORY_KEY)));
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -59,6 +61,7 @@ export function ObservatoryPanel({ data, news = [], onOpenAlertHistory }: { data
   const [alertPreferences, setAlertPreferences] = useState<ObservatoryAlertPreferences>(() => parseAlertPreferences(typeof window === "undefined" ? null : window.localStorage.getItem(OBSERVATORY_ALERTS_KEY)));
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [exportNewsScope, setExportNewsScope] = useState<"all" | "favorites">("all");
   const [alertDisposition, setAlertDisposition] = useState<ObservatoryAlertDisposition>(() => parseAlertDisposition(typeof window === "undefined" ? null : window.localStorage.getItem(OBSERVATORY_ALERT_STATE_KEY)));
   const [chartRange, setChartRange] = useState<ObservatoryChartRange>(() => parseChartRange(typeof window === "undefined" ? null : window.localStorage.getItem(OBSERVATORY_CHART_RANGE_KEY)));
   const rangeDays = chartRange === "1M" ? 31 : chartRange === "3M" ? 92 : chartRange === "6M" ? 184 : 366;
@@ -121,7 +124,7 @@ export function ObservatoryPanel({ data, news = [], onOpenAlertHistory }: { data
   const restoreAlert = (key: string) => setAlertDisposition(current => ({ ...current, ignored: current.ignored.filter(item => item !== key) }));
 
   const applyAlertPreset = (marketThreshold: number, macroThreshold: number) => setAlertPreferences(current => ({ ...current, marketThreshold, macroThreshold }));
-  const exportContent = () => observatoryMessagesToMarkdown(messages, new Date(), { asOf: data?.asOf ?? null, highlights: data?.highlights ?? [] }, [...(data?.sources ?? []), ...news.slice(0, 10).map(item => ({ label: item.source, detail: `${item.title}｜發布時間：${item.publishedAt ?? "未提供"}`, url: item.url }))]);
+  const exportContent = () => { const selectedNews = exportNewsScope === "favorites" ? favoriteNews : news; return observatoryMessagesToMarkdown(messages, new Date(), { asOf: data?.asOf ?? null, highlights: data?.highlights ?? [] }, [...(data?.sources ?? []), ...selectedNews.slice(0, 10).map(item => ({ label: item.source, detail: `${item.title}｜發布時間：${item.publishedAt ?? "未提供"}`, url: item.url }))]); };
   const exportCurrentChatMarkdown = () => { downloadMarkdown(`financial-ai-${new Date().toISOString().slice(0, 10)}.md`, exportContent()); setExportMessage("Markdown 已開始下載。"); };
   const exportCurrentChatPdf = () => { setExportMessage(openPrintPdfPreview("財經小智分析紀錄", exportContent()) ? "已開啟列印視窗，請選擇另存為 PDF。" : "瀏覽器封鎖了列印視窗，請允許此網站開啟彈出視窗後再試。 "); };
 
@@ -181,7 +184,7 @@ export function ObservatoryPanel({ data, news = [], onOpenAlertHistory }: { data
     </section>
 
     <div className="observatory-chat-layout">
-      <section className="observatory-chat-intro"><span className="observatory-kicker">交談式整理</span><h2>詢問財經小智</h2><p>可請它整理市場趨勢、解讀本頁新聞脈絡，或說明目前資料限制。回覆僅基於本頁快照，並會附上來源與風險限制。</p><ul><li>市場趨勢：以當前資料快照說明上漲與下跌標的。</li><li>總經解讀：查看匯率、美元指數與殖利率的當日變化。</li><li>新聞摘要：依本頁列出的 RSS 新聞標題與來源整理。</li></ul><div className="observatory-chat-history" aria-label="財經小智對話歷史"><div className="observatory-chat-history-header"><strong>對話歷史</strong><button className="button outline" type="button" onClick={startNewChat}>新對話</button></div>{chatHistory.length === 0 ? <p>送出第一個問題後，對話會保存在此瀏覽器。</p> : <div className="observatory-chat-history-list">{chatHistory.map(session => <button className={session.id === activeChatId ? "selected" : ""} type="button" key={session.id} onClick={() => selectChat(session)}><strong>{session.title}</strong><small>{time(session.updatedAt)}</small></button>)}</div>}</div><div className="observatory-quick-prompts" aria-label="財經小智快速提問"><strong>快速提問</strong><div>{QUICK_PROMPTS.map(prompt => <button key={prompt} type="button" onClick={() => send(prompt)} disabled={chat.isPending}>{prompt}</button>)}</div></div><div className="observatory-export-actions" aria-label="匯出財經小智分析"><strong>匯出目前對話</strong><button type="button" onClick={exportCurrentChatMarkdown}>下載 Markdown</button><button type="button" onClick={exportCurrentChatPdf}>列印／匯出 PDF</button>{exportMessage ? <span role="status">{exportMessage}</span> : null}</div></section>
+      <section className="observatory-chat-intro"><span className="observatory-kicker">交談式整理</span><h2>詢問財經小智</h2><p>可請它整理市場趨勢、解讀本頁新聞脈絡，或說明目前資料限制。回覆僅基於本頁快照，並會附上來源與風險限制。</p><ul><li>市場趨勢：以當前資料快照說明上漲與下跌標的。</li><li>總經解讀：查看匯率、美元指數與殖利率的當日變化。</li><li>新聞摘要：依本頁列出的 RSS 新聞標題與來源整理。</li></ul><div className="observatory-chat-history" aria-label="財經小智對話歷史"><div className="observatory-chat-history-header"><strong>對話歷史</strong><button className="button outline" type="button" onClick={startNewChat}>新對話</button></div>{chatHistory.length === 0 ? <p>送出第一個問題後，對話會保存在此瀏覽器。</p> : <div className="observatory-chat-history-list">{chatHistory.map(session => <button className={session.id === activeChatId ? "selected" : ""} type="button" key={session.id} onClick={() => selectChat(session)}><strong>{session.title}</strong><small>{time(session.updatedAt)}</small></button>)}</div>}</div><div className="observatory-quick-prompts" aria-label="財經小智快速提問"><strong>快速提問</strong><div>{QUICK_PROMPTS.map(prompt => <button key={prompt} type="button" onClick={() => send(prompt)} disabled={chat.isPending}>{prompt}</button>)}</div></div><div className="observatory-export-actions" aria-label="匯出財經小智分析"><strong>匯出目前對話</strong><label className="export-news-scope">新聞引用範圍<select value={exportNewsScope} onChange={event => setExportNewsScope(event.target.value as "all" | "favorites")} aria-label="新聞引用範圍"><option value="all">全部新聞</option><option value="favorites">僅收藏（{favoriteNews.length}）</option></select></label><button type="button" onClick={exportCurrentChatMarkdown}>下載 Markdown</button><button type="button" onClick={exportCurrentChatPdf}>列印／匯出 PDF</button>{exportMessage ? <span role="status">{exportMessage}</span> : null}</div></section>
       <AIChatBox messages={messages} onSendMessage={send} isLoading={chat.isPending} height="470px" className="observatory-chat" placeholder="例如：依本頁資料整理今日市場觀察" />
     </div>
 

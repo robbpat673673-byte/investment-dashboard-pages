@@ -2,6 +2,18 @@ import { describe, expect, it } from "vitest";
 import { observatoryMessagesToMarkdown } from "./observatoryExport";
 
 describe("observatory export", () => {
+  it("supports distinct all-news and favorites-only citation inputs", () => {
+    const base = [{ label: "市場行情", detail: "快照", url: "https://example.com/market" }];
+    const allNews = [...base, { label: "來源 A", detail: "全部新聞標題", url: "https://example.com/all" }];
+    const favoritesOnly = [...base, { label: "來源 B", detail: "收藏新聞標題", url: "https://example.com/favorite" }];
+    const allMarkdown = observatoryMessagesToMarkdown([], new Date("2026-08-16T00:00:00.000Z"), { asOf: null, highlights: [] }, allNews);
+    const favoritesMarkdown = observatoryMessagesToMarkdown([], new Date("2026-08-16T00:00:00.000Z"), { asOf: null, highlights: [] }, favoritesOnly);
+    expect(allMarkdown).toContain("全部新聞標題");
+    expect(allMarkdown).not.toContain("收藏新聞標題");
+    expect(favoritesMarkdown).toContain("收藏新聞標題");
+    expect(favoritesMarkdown).not.toContain("全部新聞標題");
+  });
+
   it("renders user, system and assistant messages as Markdown", () => {
     const markdown = observatoryMessagesToMarkdown([
       { role: "system", content: "資料來源：Yahoo Finance" },
