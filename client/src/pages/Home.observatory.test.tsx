@@ -25,7 +25,7 @@ vi.mock("@/lib/observatoryExport", () => ({
   openPrintPdfPreview: exportState.print,
 }));
 
-const newsSummaryState = vi.hoisted(() => ({ mode: "success" as "success" | "error" }));
+const newsSummaryState = vi.hoisted(() => ({ mode: "success" as "success" | "error", calls: [] as unknown[] }));
 
 const summaryState = vi.hoisted(() => ({
   mode: "success" as "success" | "error",
@@ -68,7 +68,7 @@ vi.mock("@/lib/trpc", () => ({
       },
     },
     observatory: {
-      summarizeNews: { useMutation: (options: { onSuccess?: (value: { summary: string }, variables: { id: string; title: string; source: string }) => void; onError?: (error: Error, variables: { id: string; title: string; source: string }) => void }) => ({ isPending: false, mutate: (variables: { id: string; title: string; source: string }) => newsSummaryState.mode === "success" ? options.onSuccess?.({ summary: "核心重點：測試摘要。可能影響：需持續觀察。資料限制：僅依公開摘要。" }, variables) : options.onError?.(new Error("新聞摘要暫時無法產生"), variables) }) },
+      summarizeNews: { useMutation: (options: { onSuccess?: (value: { summary: string }, variables: { id: string; title: string; source: string }) => void; onError?: (error: Error, variables: { id: string; title: string; source: string }) => void }) => ({ isPending: false, mutate: (variables: { id: string; title: string; source: string }) => { newsSummaryState.calls.push(variables); return newsSummaryState.mode === "success" ? options.onSuccess?.({ summary: "核心重點：測試摘要。可能影響：需持續觀察。資料限制：僅依公開摘要。" }, variables) : options.onError?.(new Error("新聞摘要暫時無法產生"), variables); } }) },
       chat: {
         useMutation: (options: { onSuccess?: (value: { answer: string }) => void; onError?: (error: Error) => void }) => ({
           isPending: false,
@@ -100,6 +100,7 @@ afterEach(() => {
   mutationState.calls = [];
   summaryState.mode = "success";
   newsSummaryState.mode = "success";
+  newsSummaryState.calls = [];
   summaryState.generated = null;
   summaryState.refetch.mockReset();
   window.localStorage.clear();
@@ -335,6 +336,33 @@ describe("Home 觀測站", () => {
     await waitFor(() => expect(screen.getByText("核心重點：測試摘要。可能影響：需持續觀察。資料限制：僅依公開摘要。")).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "新聞管理" }));
     expect(screen.getByText("收藏與稍後閱讀")).toBeTruthy();
+  });
+  it("新聞 AI 摘要結果可重新生成並一鍵複製", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "財經即時新聞" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "AI 摘要" })[0]);
+    await waitFor(() => expect(screen.getByText("AI 核心摘要")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "一鍵複製" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("核心重點：測試摘要。可能影響：需持續觀察。資料限制：僅依公開摘要。"));
+    expect(screen.getByRole("button", { name: "已複製" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
+    await waitFor(() => expect(newsSummaryState.calls).toHaveLength(2));
+    expect(screen.getByText("AI 核心摘要")).toBeTruthy();
+  });
+  it("Clipboard API 不可用時使用 execCommand fallback 複製摘要", async () => {
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+    const execCommand = vi.fn().mockReturnValue(true);
+    Object.defineProperty(document, "execCommand", { configurable: true, value: execCommand });
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "財經即時新聞" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "AI 摘要" })[0]);
+    await waitFor(() => expect(screen.getByRole("button", { name: "一鍵複製" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "一鍵複製" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "已複製" })).toBeTruthy());
+    expect(execCommand).toHaveBeenCalledWith("copy");
+    Reflect.deleteProperty(document, "execCommand");
   });
   it("新聞 AI 摘要失敗時顯示同一則新聞的錯誤提示", async () => {
     newsSummaryState.mode = "error";

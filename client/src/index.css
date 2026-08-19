@@ -213,3 +213,24 @@ html.dark .observatory-summary-actions .button{color:#07101e}
   .export-news-scope { align-items: stretch; flex-direction: column; width: 100%; }
   .export-news-scope select { width: 100%; }
 }
+
+.news-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+}
+
+.news-copy-error {
+  display: block;
+  margin-top: 0.4rem;
+  color: var(--destructive);
+  font-size: 0.76rem;
+}
+
+@media (max-width: 600px) {
+  .news-summary-actions .news-action-button {
+    flex: 1 1 8rem;
+    min-width: 0;
+  }
+}
