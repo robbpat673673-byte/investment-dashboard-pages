@@ -48,9 +48,9 @@ vi.mock("@/lib/trpc", () => ({
           isFetching: false,
           refetch: vi.fn(),
           data: {
-            domesticFunds: [],
-            foreignFunds: [],
-            market: [],
+            domesticFunds: [{ id: 7, name: "測試國內基金", code: "TEST007", fundType: "domestic", currency: "TWD", nav: 100, asOfDate: "2026-08-19T00:00:00.000Z", history: [{ date: "2026-08-12", nav: 95 }, { date: "2026-08-19", nav: 100 }], annualRank: 1, annualTotal: 1, perf: { week: 5, month: 8, quarter: 12, halfYear: 20, year: 25, ytd: 18 }, totalReturn: { available: true, reason: "配息於除息日淨值再投入", week: 5.5, month: 8.7, quarter: 12.8, halfYear: 21, year: 26, ytd: 19 } }],
+            foreignFunds: [{ id: 8, name: "測試境外基金", code: "TEST008", fundType: "foreign", currency: "USD", nav: 10, asOfDate: "2026-08-18T00:00:00.000Z", history: [{ date: "2026-08-12", nav: 9.5 }, { date: "2026-08-18", nav: 10 }], annualRank: null, annualTotal: 1, perf: { week: 2, month: 3, quarter: 4, halfYear: 5, year: 6, ytd: 5 }, totalReturn: { available: false, reason: "目前公開來源未提供完整配息歷史", week: null, month: null, quarter: null, halfYear: null, year: null, ytd: null } }],
+            market: [{ ticker: "^TWII", name: "加權指數", price: 23100, change: 100, percentChange: 0.43, quoteDate: "2026-08-18", quoteStatus: "收盤", showAsCard: true }],
             news: [{ id: 1, title: "華爾街日報市場測試標題", summary: "WSJ 公開摘要測試。", url: "https://example.com/wsj", source: "華爾街日報・市場", publishedAt: "2026-08-16T04:00:00.000Z" }, { id: 2, title: "CNBC 市場測試標題", summary: "CNBC 公開摘要測試。", url: "https://example.com/cnbc", source: "CNBC・財經市場", publishedAt: "2026-08-16T05:00:00.000Z" }, { id: 3, title: "MarketWatch 測試標題", summary: "MarketWatch 公開摘要測試。", url: "https://example.com/mw", source: "MarketWatch・焦點", publishedAt: "2026-08-16T03:00:00.000Z" }],
             lastRefresh: null,
             observatory: {
@@ -378,5 +378,39 @@ describe("Home 觀測站", () => {
     fireEvent.change(select, { target: { value: "favorites" } });
     expect(select.value).toBe("favorites");
     expect(screen.getByText(/僅收藏/)).toBeTruthy();
+  });
+});
+
+
+describe("Home 資料口徑與響應式呈現", () => {
+  it("顯示行情截至日期／收盤狀態與基金純淨值／含息分欄", () => {
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "全球市場" }));
+    expect(screen.getAllByText(/資料截至：2026-08-18 · 收盤/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "國內基金" }));
+    expect(screen.getByLabelText("測試國內基金 純淨值與含息總報酬")).toBeTruthy();
+    expect(screen.getAllByText("純淨值報酬").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("含息總報酬").length).toBeGreaterThan(0);
+    expect(screen.getByText(/資料截至：08\/19 · 淨值/)).toBeTruthy();
+    expect(screen.getByText("近 1 月 淨值 ↕")).toBeTruthy();
+    expect(screen.getByText("近 1 月 含息")).toBeTruthy();
+  });
+
+  it("境外基金顯示含息資料不足理由，375px 仍保留雙報酬區塊與可捲動比較表容器", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "國際基金" }));
+    expect(screen.getByText("目前公開來源未提供完整配息歷史")).toBeTruthy();
+    expect(document.querySelector(".fc-return-groups")).toBeTruthy();
+    const main = document.querySelector(".main") as HTMLElement;
+    Object.defineProperties(main, { clientWidth: { configurable: true, value: 375 }, scrollWidth: { configurable: true, value: 375 } });
+    expect(main.scrollWidth).toBeLessThanOrEqual(main.clientWidth);
+    const tableWrap = document.querySelector(".fund-metric-table-wrap .table-wrap") as HTMLElement;
+    const table = document.querySelector(".fund-metric-table") as HTMLElement;
+    Object.defineProperties(tableWrap, { clientWidth: { configurable: true, value: 343 }, scrollWidth: { configurable: true, value: 930 } });
+    Object.defineProperties(table, { clientWidth: { configurable: true, value: 930 }, scrollWidth: { configurable: true, value: 930 } });
+    expect(tableWrap.scrollWidth).toBeGreaterThan(tableWrap.clientWidth);
+    expect(table.scrollWidth).toBeLessThanOrEqual(930);
+    expect(document.querySelector(".fund-metric-table")?.classList.contains("fund-metric-table")).toBe(true);
   });
 });

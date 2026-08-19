@@ -16,7 +16,7 @@ export type FundDetailInput = {
   lastSyncedAt: Date | string | null;
 };
 
-function buildReinvestedHistory(history: NavPoint[], distributions: NonNullable<FundDetailInput["distributions"]>) {
+export function buildReinvestedHistory(history: NavPoint[], distributions: NonNullable<FundDetailInput["distributions"]>) {
   if (history.length === 0) return [];
   const dividendsByDate = new Map<string, number>();
   for (const item of distributions) dividendsByDate.set(item.exDate, (dividendsByDate.get(item.exDate) ?? 0) + item.amount);

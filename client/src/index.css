@@ -234,3 +234,7 @@ html.dark .observatory-summary-actions .button{color:#07101e}
     min-width: 0;
   }
 }
+
+/* 資料口徑與報酬分類 */
+.fc-return-groups{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.fc-return-group{min-width:0;padding:7px 7px 4px;border:1px solid var(--border);border-radius:6px;background:var(--bg-hover)}.fc-return-group-title{color:var(--text2);font-size:9px;font-weight:700;letter-spacing:.04em}.fc-return-group .fc-returns{margin-top:6px;padding-top:6px;border-top:1px solid var(--border)}.fc-total-return-unavailable{min-height:42px;padding:8px 2px;color:var(--text3);font-size:9px;line-height:1.45}.fund-metric-table{min-width:930px}.fund-metric-table th{white-space:nowrap}.fund-metric-table .metric-sort-button{border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;white-space:nowrap}.fund-metric-table .metric-sort-button:hover{color:var(--accent)}.idx-ts{line-height:1.4;white-space:nowrap}
+@media (max-width:680px){.fc-return-groups{grid-template-columns:1fr;gap:6px}.fc-return-group .fc-returns{grid-template-columns:repeat(5,minmax(0,1fr))}.market-card-controls{align-items:flex-start;flex-direction:column;gap:4px}.fund-metric-table-wrap{overflow:hidden}.fund-metric-table-wrap .table-wrap{margin-right:-1px}}

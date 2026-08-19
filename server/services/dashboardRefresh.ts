@@ -13,7 +13,7 @@ import {
   observatoryDailySummaries,
 } from "../../drizzle/schema";
 import { calculatePerformances, cleanText, parseHistoryPayload, safeUrl, sampleHistory, shiftMonths, type NavPoint } from "./dashboardCalculations";
-import { buildPublicFundDetail } from "./fundDetail";
+import { buildPublicFundDetail, buildReinvestedHistory } from "./fundDetail";
 import { buildObservatorySnapshot } from "./observatory";
 
 export const MACRO_HISTORY_TICKERS = ["TWD=X", "^IRX", "^TNX", "^TYX"] as const;
@@ -94,6 +94,16 @@ export const RSS_SOURCES = [
   ["https://news.google.com/rss/search?q=%E5%85%A8%E7%90%83+%E5%B8%82%E5%A0%B4+%E7%BE%8E%E8%82%A1+%E8%B2%A1%E7%B6%93&hl=zh-TW&gl=TW&ceid=TW:zh-Hant", "Google 新聞・全球市場"],
   ["https://news.google.com/rss/search?q=%E5%9F%BA%E9%87%91+%E5%82%B5%E5%88%B8+%E5%8C%AF%E7%8E%87&hl=zh-TW&gl=TW&ceid=TW:zh-Hant", "Google 新聞・基金市場"],
 ] as const;
+
+export const RSS_PER_SOURCE_QUOTA = 4;
+export const RSS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+export type RSSSourceStatus = { url: string; source: string; status: "fresh" | "stale" | "empty" | "error"; acceptedCount: number; detail?: string };
+
+export function isFreshNewsDate(value: Date | null, now = new Date(), maxAgeMs = RSS_MAX_AGE_MS) {
+  if (!value || Number.isNaN(value.getTime())) return false;
+  const age = now.getTime() - value.getTime();
+  return age >= 0 && age <= maxAgeMs;
+}
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const databaseDate = (isoDate: string) => new Date(`${isoDate}T00:00:00.000Z`);
@@ -203,35 +213,48 @@ function getXmlTag(block: string, tagName: string): string {
   return match?.[1] ?? "";
 }
 
-async function fetchNews() {
-  const items: Array<{ title: string; summary: string; url: string; source: string; publishedAt: Date | null }> = [];
+export type RSSFetchResult = { items: Array<{ title: string; summary: string; url: string; source: string; publishedAt: Date }>; statuses: RSSSourceStatus[] };
+
+async function fetchNews(): Promise<RSSFetchResult> {
+  const items: Array<{ title: string; summary: string; url: string; source: string; publishedAt: Date }> = [];
+  const statuses: RSSSourceStatus[] = [];
   const seen = new Set<string>();
   for (const [url, source] of RSS_SOURCES) {
-    if (items.length >= 24) break;
+    let acceptedFromSource = 0;
+    let sawItem = false;
+    let sawStaleItem = false;
     try {
       const xml = await fetchText(url);
       for (const block of xml.match(/<item\b[\s\S]*?<\/item>/gi) ?? []) {
-        if (items.length >= 24) break;
+        if (acceptedFromSource >= RSS_PER_SOURCE_QUOTA) break;
         const title = cleanText(getXmlTag(block, "title"), 240);
         const itemUrl = safeUrl(cleanText(getXmlTag(block, "link"), 1_500));
-        if (!title || !itemUrl || seen.has(title)) continue;
-        seen.add(title);
-        const summary = cleanText(getXmlTag(block, "description"));
         const rawDate = cleanText(getXmlTag(block, "pubDate"), 100);
         const parsedDate = new Date(rawDate);
+        sawItem = true;
+        if (!isFreshNewsDate(parsedDate)) sawStaleItem = true;
+        if (!title || !itemUrl || seen.has(title) || !isFreshNewsDate(parsedDate)) continue;
+        seen.add(title);
+        const summary = cleanText(getXmlTag(block, "description"));
         items.push({
           title,
           summary: summary === title ? "" : summary,
           url: itemUrl,
           source,
-          publishedAt: Number.isNaN(parsedDate.getTime()) ? null : parsedDate,
+          publishedAt: parsedDate,
         });
+        acceptedFromSource += 1;
       }
+      const status: RSSSourceStatus["status"] = acceptedFromSource > 0 ? "fresh" : sawStaleItem ? "stale" : "empty";
+      statuses.push({ url, source, status, acceptedCount: acceptedFromSource, detail: status === "stale" ? "沒有項目通過七天新鮮度條件" : undefined });
+      if (status !== "fresh") console.warn("[refresh] RSS 來源狀態", source, status);
     } catch (error) {
+      const detail = error instanceof Error ? error.message : "資料來源無法連線";
+      statuses.push({ url, source, status: "error", acceptedCount: 0, detail });
       console.warn("[refresh] RSS 抓取失敗", source, error);
     }
   }
-  return items;
+  return { items, statuses };
 }
 
 async function fetchMarketQuote(config: (typeof MARKET_CONFIG)[number]) {
@@ -255,7 +278,7 @@ async function fetchMarketQuote(config: (typeof MARKET_CONFIG)[number]) {
         price: latest.close,
         change,
         percentChange: previous.close === 0 ? 0 : (change / previous.close) * 100,
-        quoteDate: new Intl.DateTimeFormat("zh-TW", { timeZone: "Asia/Taipei", month: "2-digit", day: "2-digit" }).format(new Date(latest.timestamp * 1000)),
+        quoteDate: new Date(latest.timestamp * 1000).toISOString().slice(0, 10),
       };
     } catch (error) {
       lastError = error;
@@ -341,7 +364,7 @@ export async function refreshDashboardData() {
   }
 
   const fetchedNews = await fetchNews();
-  for (const item of fetchedNews) {
+  for (const item of fetchedNews.items) {
     const contentHash = createHash("sha256").update(`${item.title}|${item.url}`).digest("hex");
     await db.insert(newsItems).values({ contentHash, ...item }).onDuplicateKeyUpdate({
       set: { title: item.title, summary: item.summary, url: item.url, source: item.source, publishedAt: item.publishedAt, fetchedAt: new Date() },
@@ -376,16 +399,16 @@ export async function refreshDashboardData() {
   const historyRefresh = await refreshMacroHistory(["^GSPC", ...MACRO_HISTORY_TICKERS]);
   errors.push(...historyRefresh.errors);
 
-  const status = errors.length === 0 ? "success" : fundsUpdated > 0 || fetchedNews.length > 0 ? "partial" : "failed";
+  const status = errors.length === 0 ? "success" : fundsUpdated > 0 || fetchedNews.items.length > 0 ? "partial" : "failed";
   await db.update(refreshRuns).set({
     status,
     finishedAt: new Date(),
     fundsUpdated,
-    newsUpdated: fetchedNews.length,
-    details: errors.length > 0 ? errors.join("\n").slice(0, 10_000) : null,
+    newsUpdated: fetchedNews.items.length,
+    details: JSON.stringify({ errors, newsSources: fetchedNews.statuses }).slice(0, 10_000),
   }).where(eq(refreshRuns.id, runId));
 
-  return { status, fundsUpdated, newsUpdated: fetchedNews.length, errors };
+  return { status, fundsUpdated, newsUpdated: fetchedNews.items.length, newsSourceStatus: fetchedNews.statuses, errors };
 }
 
 const decimal = (value: string | null) => (value === null ? null : Number(value));
@@ -397,6 +420,19 @@ export async function getPublicDashboardData() {
   const allFunds = await db.select().from(funds).where(eq(funds.isActive, true)).orderBy(funds.fundType, funds.sortOrder);
   const performanceRows = await db.select().from(fundPerformances);
   const performanceByFundId = new Map(performanceRows.map(item => [item.fundId, item]));
+  const distributionRows = await db.select().from(fundDistributions).orderBy(fundDistributions.exDate);
+  const distributionsByFundId = new Map<number, Array<{ exDate: string; amount: number; annualizedYield: number | null; payoutDate: string | null; sourceUrl: string }>>();
+  for (const row of distributionRows) {
+    const current = distributionsByFundId.get(row.fundId) ?? [];
+    current.push({
+      exDate: row.exDate instanceof Date ? row.exDate.toISOString().slice(0, 10) : String(row.exDate).slice(0, 10),
+      amount: Number(row.amount),
+      annualizedYield: decimal(row.annualizedYield),
+      payoutDate: row.payoutDate instanceof Date ? row.payoutDate.toISOString().slice(0, 10) : row.payoutDate ? String(row.payoutDate).slice(0, 10) : null,
+      sourceUrl: row.sourceUrl,
+    });
+    distributionsByFundId.set(row.fundId, current);
+  }
   const navRows = await db.select({ fundId: fundNavHistory.fundId, navDate: fundNavHistory.navDate, nav: fundNavHistory.nav }).from(fundNavHistory).orderBy(fundNavHistory.fundId, fundNavHistory.navDate);
   const historyByFundId = new Map<number, NavPoint[]>();
   for (const row of navRows) {
@@ -414,6 +450,9 @@ export async function getPublicDashboardData() {
     const rawHistory = historyByFundId.get(fund.id) ?? [];
     const latestHistoryDate = rawHistory.at(-1)?.date;
     const chartHistory = latestHistoryDate ? rawHistory.filter(point => point.date >= shiftMonths(latestHistoryDate, 12)) : [];
+    const distributions = distributionsByFundId.get(fund.id) ?? [];
+    const totalReturnHistory = fund.fundType === "domestic" ? buildReinvestedHistory(rawHistory, distributions) : [];
+    const totalReturnPerformance = totalReturnHistory.length > 1 ? calculatePerformances(totalReturnHistory) : null;
     return {
       id: fund.id,
       name: fund.name,
@@ -433,6 +472,16 @@ export async function getPublicDashboardData() {
         year: performance ? decimal(performance.year) : null,
         ytd: performance ? decimal(performance.ytd) : null,
       },
+      totalReturn: {
+        available: fund.fundType === "domestic" && totalReturnPerformance !== null,
+        reason: fund.fundType === "domestic" ? (totalReturnPerformance ? "配息於除息日淨值再投入" : "目前配息或歷史資料不足") : "目前公開來源未提供完整配息歷史",
+        week: totalReturnPerformance?.week ?? null,
+        month: totalReturnPerformance?.month ?? null,
+        quarter: totalReturnPerformance?.quarter ?? null,
+        halfYear: totalReturnPerformance?.halfYear ?? null,
+        year: totalReturnPerformance?.year ?? null,
+        ytd: totalReturnPerformance?.ytd ?? null,
+      },
       isin: fund.isin,
       bankCode: fund.bankCode,
     };
@@ -440,6 +489,10 @@ export async function getPublicDashboardData() {
   const quotes = await db.select().from(marketQuotes).orderBy(marketQuotes.sortOrder);
   const news = await db.select().from(newsItems).orderBy(desc(newsItems.publishedAt), desc(newsItems.fetchedAt)).limit(12);
   const latestRun = (await db.select().from(refreshRuns).orderBy(desc(refreshRuns.startedAt)).limit(1))[0] ?? null;
+  let latestRunDetails: { newsSources?: RSSSourceStatus[] } = {};
+  if (latestRun?.details) {
+    try { latestRunDetails = JSON.parse(latestRun.details) as { newsSources?: RSSSourceStatus[] }; } catch { latestRunDetails = {}; }
+  }
   const macroRows = await db.select({ ticker: marketHistory.ticker, pointDate: marketHistory.pointDate, close: marketHistory.close }).from(marketHistory).where(or(...MACRO_HISTORY_TICKERS.map(ticker => eq(marketHistory.ticker, ticker)))).orderBy(marketHistory.pointDate);
   const latestSummary = (await db.select({ summaryDate: observatoryDailySummaries.summaryDate, generatedAt: observatoryDailySummaries.generatedAt, content: observatoryDailySummaries.content }).from(observatoryDailySummaries).orderBy(desc(observatoryDailySummaries.summaryDate)).limit(1))[0] ?? null;
 
@@ -450,6 +503,7 @@ export async function getPublicDashboardData() {
     change: decimal(quote.change),
     percentChange: decimal(quote.percentChange),
     quoteDate: quote.quoteDate,
+    quoteStatus: "收盤" as const,
     showAsCard: quote.showAsCard,
   }));
   const publicNews = news.map(item => ({ ...item, id: Number(item.id) }));
@@ -460,7 +514,7 @@ export async function getPublicDashboardData() {
     foreignFunds: allFunds.filter(fund => fund.fundType === "foreign").map(toFund),
     market: publicMarket,
     news: publicNews,
-    lastRefresh: latestRun ? { status: latestRun.status, startedAt: latestRun.startedAt, finishedAt: latestRun.finishedAt, fundsUpdated: latestRun.fundsUpdated, newsUpdated: latestRun.newsUpdated } : null,
+    lastRefresh: latestRun ? { status: latestRun.status, startedAt: latestRun.startedAt, finishedAt: latestRun.finishedAt, fundsUpdated: latestRun.fundsUpdated, newsUpdated: latestRun.newsUpdated, newsSourceStatus: latestRunDetails.newsSources ?? [] } : null,
     observatory: buildObservatorySnapshot(publicMarket, publicNews, latestRun?.finishedAt ?? null, publicMacroHistory, latestSummary),
   };
 }
