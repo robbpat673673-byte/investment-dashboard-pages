@@ -212,3 +212,6 @@ RSS 抓取現在對每個來源採獨立四則配額，並只接受發布時間�
 
 
 本輪品質補強另將 RSS 每來源狀態與 acceptedCount 寫入 `refreshRuns.details`，並由公開 `lastRefresh.newsSourceStatus` 提供；狀態包含 fresh、stale、empty、error。首頁測試新增行情截至日期／收盤、基金純淨值／含息分欄、境外配息資料不足理由與 375px 結構斷言。
+
+
+本輪資料品質與報酬呈現正式版本：`4c137291`。
