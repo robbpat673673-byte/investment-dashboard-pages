@@ -109,6 +109,20 @@ export function isFreshNewsDate(value: Date | null, now = new Date(), maxAgeMs =
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const databaseDate = (isoDate: string) => new Date(`${isoDate}T00:00:00.000Z`);
 
+export async function mapWithConcurrency<T, R>(items: T[], limit: number, worker: (item: T, index: number) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const runWorker = async () => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index], index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, limit), Math.max(1, items.length)) }, () => runWorker()));
+  return results;
+}
+
 async function fetchText(url: string): Promise<string> {
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -317,11 +331,9 @@ export async function refreshDashboardData() {
   const runId = Number(run[0].insertId);
   const activeFunds = await db.select().from(funds).where(eq(funds.isActive, true)).orderBy(funds.fundType, funds.sortOrder);
   const errors: string[] = [];
-  let fundsUpdated = 0;
-
-  for (const fund of activeFunds) {
+  const fundResults = await mapWithConcurrency(activeFunds, 6, async fund => {
     try {
-      const history = await fetchFundHistory(fund);
+      const [history, distributions] = await Promise.all([fetchFundHistory(fund), fetchFundDistributions(fund)]);
       if (history.length < 2) throw new Error("歷史淨值筆數不足");
       const latest = history.at(-1)!;
       const performance = calculatePerformances(history);
@@ -332,38 +344,19 @@ export async function refreshDashboardData() {
         const batch = history.slice(index, index + 250).map(point => ({ fundId: fund.id, navDate: databaseDate(point.date), nav: point.nav.toFixed(6) }));
         await db.insert(fundNavHistory).values(batch).onDuplicateKeyUpdate({ set: { nav: sql`VALUES(nav)`, sourcedAt: new Date() } });
       }
-      await db.insert(fundPerformances).values({
-        fundId: fund.id,
-        asOfDate: databaseDate(latest.date),
-        latestNav: latest.nav.toFixed(6),
-        ...databasePerformance,
-      }).onDuplicateKeyUpdate({
-        set: {
-          asOfDate: databaseDate(latest.date),
-          latestNav: latest.nav.toFixed(6),
-          ...databasePerformance,
-          updatedAt: new Date(),
-        },
+      await db.insert(fundPerformances).values({ fundId: fund.id, asOfDate: databaseDate(latest.date), latestNav: latest.nav.toFixed(6), ...databasePerformance }).onDuplicateKeyUpdate({
+        set: { asOfDate: databaseDate(latest.date), latestNav: latest.nav.toFixed(6), ...databasePerformance, updatedAt: new Date() },
       });
-      const distributions = await fetchFundDistributions(fund);
       if (distributions.length > 0) {
-        await db.insert(fundDistributions).values(distributions.map(item => ({
-          fundId: fund.id,
-          recordDate: item.recordDate ? databaseDate(item.recordDate) : null,
-          exDate: databaseDate(item.exDate),
-          payoutDate: item.payoutDate ? databaseDate(item.payoutDate) : null,
-          amount: item.amount.toFixed(6),
-          annualizedYield: item.annualizedYield === null ? null : item.annualizedYield.toFixed(4),
-          currency: item.currency || fund.currency,
-          sourceUrl: item.sourceUrl,
-        }))).onDuplicateKeyUpdate({ set: { amount: sql`VALUES(amount)`, annualizedYield: sql`VALUES(annualizedYield)`, payoutDate: sql`VALUES(payoutDate)`, sourcedAt: new Date() } });
+        await db.insert(fundDistributions).values(distributions.map(item => ({ fundId: fund.id, recordDate: item.recordDate ? databaseDate(item.recordDate) : null, exDate: databaseDate(item.exDate), payoutDate: item.payoutDate ? databaseDate(item.payoutDate) : null, amount: item.amount.toFixed(6), annualizedYield: item.annualizedYield === null ? null : item.annualizedYield.toFixed(4), currency: item.currency || fund.currency, sourceUrl: item.sourceUrl }))).onDuplicateKeyUpdate({ set: { amount: sql`VALUES(amount)`, annualizedYield: sql`VALUES(annualizedYield)`, payoutDate: sql`VALUES(payoutDate)`, sourcedAt: new Date() } });
       }
-      fundsUpdated += 1;
+      return true;
     } catch (error) {
       errors.push(`${fund.name}：${error instanceof Error ? error.message : "更新失敗"}`);
+      return false;
     }
-    await sleep(250);
-  }
+  });
+  const fundsUpdated = fundResults.filter(Boolean).length;
 
   const fetchedNews = await fetchNews();
   if (fetchedNews.statuses.length > 0) {
@@ -376,30 +369,16 @@ export async function refreshDashboardData() {
     });
   }
 
-  for (const config of MARKET_CONFIG) {
+  await mapWithConcurrency(MARKET_CONFIG, 8, async config => {
     try {
       const quote = await fetchMarketQuote(config);
-      await db.insert(marketQuotes).values({
-        ...quote,
-        price: quote.price.toFixed(4),
-        change: quote.change.toFixed(4),
-        percentChange: quote.percentChange.toFixed(4),
-      }).onDuplicateKeyUpdate({
-        set: {
-          name: quote.name,
-          price: quote.price.toFixed(4),
-          change: quote.change.toFixed(4),
-          percentChange: quote.percentChange.toFixed(4),
-          quoteDate: quote.quoteDate,
-          showAsCard: quote.showAsCard,
-          sortOrder: quote.sortOrder,
-          updatedAt: new Date(),
-        },
+      await db.insert(marketQuotes).values({ ...quote, price: quote.price.toFixed(4), change: quote.change.toFixed(4), percentChange: quote.percentChange.toFixed(4) }).onDuplicateKeyUpdate({
+        set: { name: quote.name, price: quote.price.toFixed(4), change: quote.change.toFixed(4), percentChange: quote.percentChange.toFixed(4), quoteDate: quote.quoteDate, showAsCard: quote.showAsCard, sortOrder: quote.sortOrder, updatedAt: new Date() },
       });
     } catch (error) {
       errors.push(`${config.name} 行情：${error instanceof Error ? error.message : "更新失敗"}`);
     }
-  }
+  });
 
   const historyRefresh = await refreshMacroHistory(["^GSPC", ...MACRO_HISTORY_TICKERS]);
   errors.push(...historyRefresh.errors);
