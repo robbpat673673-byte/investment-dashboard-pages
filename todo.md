@@ -240,3 +240,11 @@
 - [x] 為 RSS 輸出來源狀態（fresh／stale／error／empty）與 acceptedCount，供公開 payload／追溯使用
 - [x] 補上首頁測試：行情資料截至日期／收盤標籤與基金純淨值／含息分欄、資料不足理由
 - [x] 補上 375px 自動化 UI 斷言，確認新增日期與雙報酬區塊不溢出且可讀
+
+## 本次擴充：新聞來源健康狀態
+
+- [x] 在新聞頁加入各 RSS 來源健康狀態區塊
+- [x] 顯示每來源 fresh／stale／empty／error、acceptedCount 與最近刷新資訊
+- [x] 補上來源狀態資料契約與首頁整合測試
+- [x] 完成桌面／375px 響應式驗證並更新追溯文件
+- [x] 保存新的正式 checkpoint

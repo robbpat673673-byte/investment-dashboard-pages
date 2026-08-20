@@ -238,3 +238,20 @@ html.dark .observatory-summary-actions .button{color:#07101e}
 /* 資料口徑與報酬分類 */
 .fc-return-groups{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.fc-return-group{min-width:0;padding:7px 7px 4px;border:1px solid var(--border);border-radius:6px;background:var(--bg-hover)}.fc-return-group-title{color:var(--text2);font-size:9px;font-weight:700;letter-spacing:.04em}.fc-return-group .fc-returns{margin-top:6px;padding-top:6px;border-top:1px solid var(--border)}.fc-total-return-unavailable{min-height:42px;padding:8px 2px;color:var(--text3);font-size:9px;line-height:1.45}.fund-metric-table{min-width:930px}.fund-metric-table th{white-space:nowrap}.fund-metric-table .metric-sort-button{border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;white-space:nowrap}.fund-metric-table .metric-sort-button:hover{color:var(--accent)}.idx-ts{line-height:1.4;white-space:nowrap}
 @media (max-width:680px){.fc-return-groups{grid-template-columns:1fr;gap:6px}.fc-return-group .fc-returns{grid-template-columns:repeat(5,minmax(0,1fr))}.market-card-controls{align-items:flex-start;flex-direction:column;gap:4px}.fund-metric-table-wrap{overflow:hidden}.fund-metric-table-wrap .table-wrap{margin-right:-1px}}
+
+
+.news-source-health { margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--card) 88%, transparent); }
+.news-source-health-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .7rem; }
+.news-source-health-card { min-width: 0; padding: .8rem; border: 1px solid var(--border); border-radius: 10px; background: var(--background); }
+.news-source-health-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.news-source-health-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-health-badge { flex: 0 0 auto; border-radius: 999px; padding: .16rem .45rem; font-size: .72rem; font-weight: 700; }
+.source-health-badge.fresh { color: #166534; background: #dcfce7; }
+.source-health-badge.stale { color: #92400e; background: #fef3c7; }
+.source-health-badge.empty { color: #475569; background: #e2e8f0; }
+.source-health-badge.error { color: #991b1b; background: #fee2e2; }
+.news-source-health-meta { display: grid; gap: .25rem; margin: .65rem 0; color: var(--muted-foreground); font-size: .78rem; }
+.news-source-health-meta span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.news-source-health-card a { color: var(--primary); font-size: .78rem; }
+@media (max-width: 700px) { .news-source-health { padding: .75rem; } .news-source-health-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 430px) { .news-source-health-grid { grid-template-columns: 1fr; } .news-source-health-head { align-items: flex-start; flex-direction: column; } .news-source-health-meta span:last-child { white-space: normal; } }

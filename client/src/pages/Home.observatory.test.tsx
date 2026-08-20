@@ -52,7 +52,7 @@ vi.mock("@/lib/trpc", () => ({
             foreignFunds: [{ id: 8, name: "測試境外基金", code: "TEST008", fundType: "foreign", currency: "USD", nav: 10, asOfDate: "2026-08-18T00:00:00.000Z", history: [{ date: "2026-08-12", nav: 9.5 }, { date: "2026-08-18", nav: 10 }], annualRank: null, annualTotal: 1, perf: { week: 2, month: 3, quarter: 4, halfYear: 5, year: 6, ytd: 5 }, totalReturn: { available: false, reason: "目前公開來源未提供完整配息歷史", week: null, month: null, quarter: null, halfYear: null, year: null, ytd: null } }],
             market: [{ ticker: "^TWII", name: "加權指數", price: 23100, change: 100, percentChange: 0.43, quoteDate: "2026-08-18", quoteStatus: "收盤", showAsCard: true }],
             news: [{ id: 1, title: "華爾街日報市場測試標題", summary: "WSJ 公開摘要測試。", url: "https://example.com/wsj", source: "華爾街日報・市場", publishedAt: "2026-08-16T04:00:00.000Z" }, { id: 2, title: "CNBC 市場測試標題", summary: "CNBC 公開摘要測試。", url: "https://example.com/cnbc", source: "CNBC・財經市場", publishedAt: "2026-08-16T05:00:00.000Z" }, { id: 3, title: "MarketWatch 測試標題", summary: "MarketWatch 公開摘要測試。", url: "https://example.com/mw", source: "MarketWatch・焦點", publishedAt: "2026-08-16T03:00:00.000Z" }],
-            lastRefresh: null,
+            lastRefresh: { status: "success", startedAt: "2026-08-16T03:50:00.000Z", finishedAt: "2026-08-16T04:00:00.000Z", fundsUpdated: 4, newsUpdated: 8, newsSourceStatus: [{ url: "https://example.com/cnbc-rss", source: "CNBC・財經市場", status: "fresh", acceptedCount: 4 }, { url: "https://example.com/wsj-rss", source: "華爾街日報・市場", status: "stale", acceptedCount: 0, detail: "沒有項目通過七天新鮮度條件" }, { url: "https://example.com/ft-rss", source: "Financial Times・全球市場", status: "empty", acceptedCount: 0 }, { url: "https://example.com/mw-rss", source: "MarketWatch・焦點", status: "error", acceptedCount: 0, detail: "來源無法連線" }] },
             observatory: {
               asOf: "2026-08-16T04:00:00.000Z",
               pulse: "中性",
@@ -412,5 +412,31 @@ describe("Home 資料口徑與響應式呈現", () => {
     expect(tableWrap.scrollWidth).toBeGreaterThan(tableWrap.clientWidth);
     expect(table.scrollWidth).toBeLessThanOrEqual(930);
     expect(document.querySelector(".fund-metric-table")?.classList.contains("fund-metric-table")).toBe(true);
+  });
+});
+
+
+describe("新聞來源健康狀態", () => {
+  it("顯示各來源狀態、接收數量與最近刷新時間", () => {
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "財經即時新聞" }));
+    expect(screen.getByRole("region", { name: "新聞來源健康狀態" })).toBeTruthy();
+    expect(screen.getByText("新聞來源健康狀態")).toBeTruthy();
+    expect(screen.getByText("新鮮")).toBeTruthy();
+    expect(screen.getByText("過舊")).toBeTruthy();
+    expect(screen.getByText("無內容")).toBeTruthy();
+    expect(screen.getByText("錯誤")).toBeTruthy();
+    expect(screen.getByText("接收 4 則")).toBeTruthy();
+    expect(screen.getByText(/最近刷新：2026\/08\/16/)).toBeTruthy();
+  });
+
+  it("375px 下來源卡片會收斂為單欄且保留來源連結", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "財經即時新聞" }));
+    expect(document.querySelectorAll(".news-source-health-card")).toHaveLength(4);
+    expect(screen.getAllByRole("link", { name: "開啟來源 ↗" })).toHaveLength(4);
+    const health = screen.getByRole("region", { name: "新聞來源健康狀態" });
+    expect(health.className).toContain("news-source-health");
   });
 });
