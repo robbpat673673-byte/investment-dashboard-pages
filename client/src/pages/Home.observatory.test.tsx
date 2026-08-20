@@ -473,3 +473,32 @@ describe("RSS 趨勢來源篩選空狀態", () => {
     expect(screen.queryByRole("combobox", { name: "選擇 RSS 趨勢來源" })).toBeNull();
   });
 });
+
+
+describe("資料新鮮度 UI", () => {
+  it("市場與基金卡片顯示資料截至日及狀態，頁首另顯示刷新完成狀態", () => {
+    render(<Home />);
+    expect(screen.getByText(/每日自動更新：/)).toBeTruthy();
+    expect(screen.getByText("資料延遲")).toBeTruthy();
+    expect(screen.getByText("前一交易日")).toBeTruthy();
+    expect(document.querySelector(".idx-ts")?.textContent).toContain("資料截至");
+    expect(document.querySelector(".idx-ts")?.textContent).toContain("收盤");
+    expect(document.body.textContent).toContain("2026-08-18");
+
+    fireEvent.click(screen.getByRole("button", { name: "國內基金" }));
+    expect(document.querySelector(".fc-ts")?.textContent).toContain("08/19");
+    expect(document.querySelector(".fc-ts")?.textContent).toContain("淨值");
+    fireEvent.click(screen.getByRole("button", { name: "國際基金" }));
+    expect(screen.getByText("境外公布落後")).toBeTruthy();
+  });
+
+  it("375px 下新鮮度文字保留在卡片內且主內容不產生水平溢出", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    render(<Home />);
+    const main = document.querySelector(".main") as HTMLElement;
+    Object.defineProperties(main, { clientWidth: { configurable: true, value: 375 }, scrollWidth: { configurable: true, value: 375 } });
+    expect(main.scrollWidth).toBeLessThanOrEqual(main.clientWidth);
+    expect(document.querySelectorAll(".data-freshness").length).toBeGreaterThan(0);
+    expect(document.querySelectorAll(".idx-ts small").length).toBeGreaterThan(0);
+  });
+});

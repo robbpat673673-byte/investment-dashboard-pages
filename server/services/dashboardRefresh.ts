@@ -109,7 +109,7 @@ export function isFreshNewsDate(value: Date | null, now = new Date(), maxAgeMs =
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const databaseDate = (isoDate: string) => new Date(`${isoDate}T00:00:00.000Z`);
 
-export async function mapWithConcurrency<T, R>(items: T[], limit: number, worker: (item: T, index: number) => Promise<R>) {
+export async function mapWithConcurrency<T, R>(items: readonly T[], limit: number, worker: (item: T, index: number) => Promise<R>) {
   const results = new Array<R>(items.length);
   let nextIndex = 0;
   const runWorker = async () => {
@@ -231,43 +231,44 @@ function getXmlTag(block: string, tagName: string): string {
 export type RSSFetchResult = { items: Array<{ title: string; summary: string; url: string; source: string; publishedAt: Date }>; statuses: RSSSourceStatus[] };
 
 async function fetchNews(): Promise<RSSFetchResult> {
-  const items: Array<{ title: string; summary: string; url: string; source: string; publishedAt: Date }> = [];
-  const statuses: RSSSourceStatus[] = [];
-  const seen = new Set<string>();
-  for (const [url, source] of RSS_SOURCES) {
+  type SourceResult = { items: Array<{ title: string; summary: string; url: string; source: string; publishedAt: Date }>; status: RSSSourceStatus };
+  const sourceResults = await mapWithConcurrency(RSS_SOURCES, 4, async ([url, source]): Promise<SourceResult> => {
     const sourceStartedAt = Date.now();
-    let acceptedFromSource = 0;
+    const sourceItems: SourceResult["items"] = [];
     let sawItem = false;
     let sawStaleItem = false;
     try {
       const xml = await fetchText(url);
       for (const block of xml.match(/<item\b[\s\S]*?<\/item>/gi) ?? []) {
-        if (acceptedFromSource >= RSS_PER_SOURCE_QUOTA) break;
+        if (sourceItems.length >= RSS_PER_SOURCE_QUOTA) break;
         const title = cleanText(getXmlTag(block, "title"), 240);
         const itemUrl = safeUrl(cleanText(getXmlTag(block, "link"), 1_500));
-        const rawDate = cleanText(getXmlTag(block, "pubDate"), 100);
-        const parsedDate = new Date(rawDate);
+        const parsedDate = new Date(cleanText(getXmlTag(block, "pubDate"), 100));
         sawItem = true;
         if (!isFreshNewsDate(parsedDate)) sawStaleItem = true;
-        if (!title || !itemUrl || seen.has(title) || !isFreshNewsDate(parsedDate)) continue;
-        seen.add(title);
+        if (!title || !itemUrl || !isFreshNewsDate(parsedDate)) continue;
         const summary = cleanText(getXmlTag(block, "description"));
-        items.push({
-          title,
-          summary: summary === title ? "" : summary,
-          url: itemUrl,
-          source,
-          publishedAt: parsedDate,
-        });
-        acceptedFromSource += 1;
+        sourceItems.push({ title, summary: summary === title ? "" : summary, url: itemUrl, source, publishedAt: parsedDate });
       }
-      const status: RSSSourceStatus["status"] = acceptedFromSource > 0 ? "fresh" : sawStaleItem ? "stale" : "empty";
-      statuses.push({ url, source, status, acceptedCount: acceptedFromSource, latencyMs: Date.now() - sourceStartedAt, detail: status === "stale" ? "沒有項目通過七天新鮮度條件" : undefined });
+      const status: RSSSourceStatus["status"] = sourceItems.length > 0 ? "fresh" : sawStaleItem ? "stale" : "empty";
+      const result = { items: sourceItems, status: { url, source, status, acceptedCount: sourceItems.length, latencyMs: Date.now() - sourceStartedAt, detail: status === "stale" ? "沒有項目通過七天新鮮度條件" : undefined } };
       if (status !== "fresh") console.warn("[refresh] RSS 來源狀態", source, status);
+      return result;
     } catch (error) {
       const detail = error instanceof Error ? error.message : "資料來源無法連線";
-      statuses.push({ url, source, status: "error", acceptedCount: 0, latencyMs: Date.now() - sourceStartedAt, detail });
       console.warn("[refresh] RSS 抓取失敗", source, error);
+      return { items: [], status: { url, source, status: "error", acceptedCount: 0, latencyMs: Date.now() - sourceStartedAt, detail } };
+    }
+  });
+  const items: RSSFetchResult["items"] = [];
+  const statuses: RSSSourceStatus[] = [];
+  const seen = new Set<string>();
+  for (const result of sourceResults) {
+    statuses.push(result.status);
+    for (const item of result.items) {
+      if (seen.has(item.title)) continue;
+      seen.add(item.title);
+      items.push(item);
     }
   }
   return { items, statuses };
@@ -307,20 +308,18 @@ async function fetchMarketQuote(config: (typeof MARKET_CONFIG)[number]) {
 export async function refreshMacroHistory(tickers: readonly string[] = ["^GSPC", ...MACRO_HISTORY_TICKERS]) {
   const db = await getDb();
   if (!db) throw new Error("資料庫尚未連線");
-  const errors: string[] = [];
-  let pointsUpdated = 0;
-  for (const ticker of tickers) {
+  const results = await mapWithConcurrency(tickers, 4, async ticker => {
     try {
       const series = await fetchMarketHistory(ticker);
       for (let index = 0; index < series.length; index += 250) {
         await db.insert(marketHistory).values(series.slice(index, index + 250).map(point => ({ ticker, pointDate: databaseDate(point.date), close: point.nav.toFixed(6), source: "Yahoo Finance" }))).onDuplicateKeyUpdate({ set: { close: sql`VALUES(close)`, sourcedAt: new Date() } });
       }
-      pointsUpdated += series.length;
+      return { points: series.length, error: null as string | null };
     } catch (error) {
-      errors.push(`${ticker} 歷史：${error instanceof Error ? error.message : "更新失敗"}`);
+      return { points: 0, error: `${ticker} 歷史：${error instanceof Error ? error.message : "更新失敗"}` };
     }
-  }
-  return { pointsUpdated, errors };
+  });
+  return { pointsUpdated: results.reduce((total, result) => total + result.points, 0), errors: results.flatMap(result => result.error ? [result.error] : []) };
 }
 
 export async function refreshDashboardData() {
