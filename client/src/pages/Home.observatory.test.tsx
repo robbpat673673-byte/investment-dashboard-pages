@@ -66,6 +66,9 @@ vi.mock("@/lib/trpc", () => ({
           },
         }),
       },
+      newsSourceHealthHistory: {
+        useQuery: () => ({ data: [{ refreshRunId: 101, source: "CNBC・財經市場", status: "fresh", acceptedCount: 4, latencyMs: 420, recordedAt: "2026-08-15T04:00:00.000Z" }, { refreshRunId: 101, source: "華爾街日報・市場", status: "stale", acceptedCount: 0, latencyMs: 830, recordedAt: "2026-08-15T04:00:01.000Z" }, { refreshRunId: 102, source: "CNBC・財經市場", status: "fresh", acceptedCount: 4, latencyMs: 380, recordedAt: "2026-08-16T04:00:00.000Z" }, { refreshRunId: 102, source: "華爾街日報・市場", status: "error", acceptedCount: 0, latencyMs: 1400, recordedAt: "2026-08-16T04:00:01.000Z" }], isLoading: false })
+      },
     },
     observatory: {
       summarizeNews: { useMutation: (options: { onSuccess?: (value: { summary: string }, variables: { id: string; title: string; source: string }) => void; onError?: (error: Error, variables: { id: string; title: string; source: string }) => void }) => ({ isPending: false, mutate: (variables: { id: string; title: string; source: string }) => { newsSummaryState.calls.push(variables); return newsSummaryState.mode === "success" ? options.onSuccess?.({ summary: "核心重點：測試摘要。可能影響：需持續觀察。資料限制：僅依公開摘要。" }, variables) : options.onError?.(new Error("新聞摘要暫時無法產生"), variables); } }) },
@@ -426,6 +429,8 @@ describe("新聞來源健康狀態", () => {
     expect(screen.getByText("過舊")).toBeTruthy();
     expect(screen.getByText("無內容")).toBeTruthy();
     expect(screen.getByText("錯誤")).toBeTruthy();
+    expect(screen.getByText("各來源累積抓取成功率")).toBeTruthy();
+    expect(screen.getByText("各來源抓取延遲")).toBeTruthy();
     expect(screen.getByText("接收 4 則")).toBeTruthy();
     expect(screen.getByText(/最近刷新：2026\/08\/16/)).toBeTruthy();
   });
@@ -435,6 +440,11 @@ describe("新聞來源健康狀態", () => {
     render(<Home />);
     fireEvent.click(screen.getByRole("button", { name: "財經即時新聞" }));
     expect(document.querySelectorAll(".news-source-health-card")).toHaveLength(4);
+    const trend = screen.getByRole("region", { name: "新聞來源歷史趨勢" });
+    expect(trend.style.overflowX).toBe("hidden");
+    const chartBlocks = Array.from(document.querySelectorAll<HTMLElement>(".news-health-chart-block"));
+    expect(chartBlocks).toHaveLength(2);
+    expect(chartBlocks.every(block => block.style.overflowX === "hidden")).toBe(true);
     expect(screen.getAllByRole("link", { name: "開啟來源 ↗" })).toHaveLength(4);
     const health = screen.getByRole("region", { name: "新聞來源健康狀態" });
     expect(health.className).toContain("news-source-health");

@@ -11,6 +11,7 @@ import {
   newsItems,
   refreshRuns,
   observatoryDailySummaries,
+  rssSourceHealthHistory,
 } from "../../drizzle/schema";
 import { calculatePerformances, cleanText, parseHistoryPayload, safeUrl, sampleHistory, shiftMonths, type NavPoint } from "./dashboardCalculations";
 import { buildPublicFundDetail, buildReinvestedHistory } from "./fundDetail";
@@ -97,7 +98,7 @@ export const RSS_SOURCES = [
 
 export const RSS_PER_SOURCE_QUOTA = 4;
 export const RSS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-export type RSSSourceStatus = { url: string; source: string; status: "fresh" | "stale" | "empty" | "error"; acceptedCount: number; detail?: string };
+export type RSSSourceStatus = { url: string; source: string; status: "fresh" | "stale" | "empty" | "error"; acceptedCount: number; latencyMs: number; detail?: string };
 
 export function isFreshNewsDate(value: Date | null, now = new Date(), maxAgeMs = RSS_MAX_AGE_MS) {
   if (!value || Number.isNaN(value.getTime())) return false;
@@ -220,6 +221,7 @@ async function fetchNews(): Promise<RSSFetchResult> {
   const statuses: RSSSourceStatus[] = [];
   const seen = new Set<string>();
   for (const [url, source] of RSS_SOURCES) {
+    const sourceStartedAt = Date.now();
     let acceptedFromSource = 0;
     let sawItem = false;
     let sawStaleItem = false;
@@ -246,11 +248,11 @@ async function fetchNews(): Promise<RSSFetchResult> {
         acceptedFromSource += 1;
       }
       const status: RSSSourceStatus["status"] = acceptedFromSource > 0 ? "fresh" : sawStaleItem ? "stale" : "empty";
-      statuses.push({ url, source, status, acceptedCount: acceptedFromSource, detail: status === "stale" ? "沒有項目通過七天新鮮度條件" : undefined });
+      statuses.push({ url, source, status, acceptedCount: acceptedFromSource, latencyMs: Date.now() - sourceStartedAt, detail: status === "stale" ? "沒有項目通過七天新鮮度條件" : undefined });
       if (status !== "fresh") console.warn("[refresh] RSS 來源狀態", source, status);
     } catch (error) {
       const detail = error instanceof Error ? error.message : "資料來源無法連線";
-      statuses.push({ url, source, status: "error", acceptedCount: 0, detail });
+      statuses.push({ url, source, status: "error", acceptedCount: 0, latencyMs: Date.now() - sourceStartedAt, detail });
       console.warn("[refresh] RSS 抓取失敗", source, error);
     }
   }
@@ -364,6 +366,9 @@ export async function refreshDashboardData() {
   }
 
   const fetchedNews = await fetchNews();
+  if (fetchedNews.statuses.length > 0) {
+    await db.insert(rssSourceHealthHistory).values(fetchedNews.statuses.map(item => ({ refreshRunId: runId, sourceUrl: item.url, source: item.source, status: item.status, acceptedCount: item.acceptedCount, latencyMs: item.latencyMs })));
+  }
   for (const item of fetchedNews.items) {
     const contentHash = createHash("sha256").update(`${item.title}|${item.url}`).digest("hex");
     await db.insert(newsItems).values({ contentHash, ...item }).onDuplicateKeyUpdate({
@@ -412,6 +417,13 @@ export async function refreshDashboardData() {
 }
 
 const decimal = (value: string | null) => (value === null ? null : Number(value));
+
+export async function getRSSHealthHistory(limit = 14) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({ refreshRunId: rssSourceHealthHistory.refreshRunId, source: rssSourceHealthHistory.source, status: rssSourceHealthHistory.status, acceptedCount: rssSourceHealthHistory.acceptedCount, latencyMs: rssSourceHealthHistory.latencyMs, recordedAt: rssSourceHealthHistory.recordedAt }).from(rssSourceHealthHistory).orderBy(desc(rssSourceHealthHistory.recordedAt)).limit(Math.max(1, Math.min(90, limit)) * RSS_SOURCES.length);
+  return rows.reverse().map(row => ({ refreshRunId: row.refreshRunId, source: row.source, status: row.status, acceptedCount: row.acceptedCount, latencyMs: row.latencyMs, recordedAt: row.recordedAt }));
+}
 
 export async function getPublicDashboardData() {
   const db = await getDb();

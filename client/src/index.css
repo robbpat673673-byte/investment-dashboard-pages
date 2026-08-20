@@ -255,3 +255,10 @@ html.dark .observatory-summary-actions .button{color:#07101e}
 .news-source-health-card a { color: var(--primary); font-size: .78rem; }
 @media (max-width: 700px) { .news-source-health { padding: .75rem; } .news-source-health-grid { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 430px) { .news-source-health-grid { grid-template-columns: 1fr; } .news-source-health-head { align-items: flex-start; flex-direction: column; } .news-source-health-meta span:last-child { white-space: normal; } }
+
+
+.news-health-trend { margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--card) 88%, transparent); }
+.news-health-chart-block { min-width: 0; margin-top: .9rem; padding: .8rem; border: 1px solid var(--border); border-radius: 10px; background: var(--background); }
+.news-health-chart-block strong { display: block; margin-bottom: .35rem; font-size: .86rem; }
+.news-health-chart-block .recharts-responsive-container { min-width: 0; }
+@media (max-width: 430px) { .news-health-trend { padding: .75rem; } .news-health-chart-block { padding: .55rem; } }

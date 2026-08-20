@@ -1,0 +1,1 @@
+ALTER TABLE `rss_source_health_history` ADD `refreshRunId` bigint;

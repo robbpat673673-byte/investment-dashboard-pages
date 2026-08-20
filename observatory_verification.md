@@ -218,3 +218,12 @@ RSS 抓取現在對每個來源採獨立四則配額，並只接受發布時間�
 
 
 本輪新增新聞來源健康狀態面板：來源可顯示 fresh／stale／empty／error、acceptedCount、最近刷新時間與來源連結；20 個測試檔、83 個案例及 TypeScript 檢查通過。桌面與 375px 預覽確認區塊不破版；正式預覽當下尚未有可用刷新批次，因此顯示「目前沒有可用的 RSS 來源狀態」空狀態，並未以假資料填充。
+
+
+本輪新增 RSS 歷史健康趨勢：每次刷新將各來源的 fresh／stale／empty／error、acceptedCount、latencyMs 與 recordedAt 寫入 `rss_source_health_history`；公開 dashboard 路由提供最近 14 個刷新批次。新聞頁以兩張 Recharts 折線圖顯示各來源累積成功率與抓取延遲，歷史不足時顯示明確空狀態。20 個測試檔、83 個案例及 TypeScript 檢查通過；桌面／375px 預覽完成，正式預覽當下尚未累積刷新紀錄，故圖表顯示空狀態。
+
+
+品質補強：趨勢資料改以 `refreshRunId` 對齊同一刷新批次；來源在該批次缺少資料時使用 `null`，不再以 0 造成虛假延遲下探。新增趨勢資料轉換測試（成功率、延遲、缺值）、`dashboard.newsSourceHealthHistory` 路由測試；22 個測試檔、87 個案例通過，TypeScript 與桌面／375px 預覽完成。正式資料尚未累積刷新批次時，畫面維持可辨識的空狀態。
+
+
+最終品質補強：新增 `getRSSHealthHistory` 服務層測試，驗證 limit、時間排序、refreshRunId、latencyMs 與空資料；375px 測試改為檢查實際渲染趨勢外框與圖表區塊的 overflowX 邊界，而非人工設定 scrollWidth。完整結果為 23 個測試檔、89 個案例通過，TypeScript 檢查通過。

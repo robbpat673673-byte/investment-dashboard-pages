@@ -164,6 +164,21 @@ export const refreshRuns = mysqlTable("refresh_runs", {
   details: text("details"),
 });
 
+export const rssSourceHealthHistory = mysqlTable(
+  "rss_source_health_history",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    refreshRunId: bigint("refreshRunId", { mode: "number" }),
+    sourceUrl: text("sourceUrl").notNull(),
+    source: varchar("source", { length: 120 }).notNull(),
+    status: mysqlEnum("status", ["fresh", "stale", "empty", "error"]).notNull(),
+    acceptedCount: int("acceptedCount").notNull().default(0),
+    latencyMs: int("latencyMs"),
+    recordedAt: timestamp("recordedAt").defaultNow().notNull(),
+  },
+  table => [index("rss_health_source_date_idx").on(table.source, table.recordedAt), index("rss_health_date_idx").on(table.recordedAt)],
+);
+
 export const appSettings = mysqlTable("app_settings", {
   settingKey: varchar("settingKey", { length: 64 }).primaryKey(),
   value: text("value"),
