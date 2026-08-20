@@ -256,3 +256,10 @@ RSS 抓取現在對每個來源採獨立四則配額，並只接受發布時間�
 本輪新增管理者限定的 `dashboard.manualRefresh` mutation，沿用每日 Heartbeat 共用的 `refreshDashboardData()`，不建立第二套刷新流程。管理者在首頁的「資料刷新管理」面板按下「手動刷新」後，會看到基金、RSS 新聞、行情與總經歷史四個階段的進度條、狀態、更新數量與錯誤明細；後端以 `adminProcedure` 限制非管理者，刷新完成後首頁會重新載入公開 dashboard payload。
 
 公開 dashboard payload 現在保留每個行情 ticker 最近 90 個交易日的 `{ date, value }` 序列；基金卡片則沿用既有一年期 `history` 序列。行情卡新增「近 90 日價格走勢」SVG 折線圖，基金卡持續顯示「近一年淨值走勢」，兩者均在資料不足時顯示明確空狀態。新增管理面板與行情圖表測試後，完整 Vitest 為 26 個測試檔、101 個案例通過，TypeScript 檢查通過；桌面及 375px 預覽均完成，未觀察到新增控制項造成水平溢出。未登入公開預覽不顯示管理者刷新面板，符合權限設計。
+
+
+## 2026-08-20 SSE 即時刷新與基金／行情區間切換
+
+本輪將管理者手動刷新改為 `/api/admin/refresh/stream` SSE 端點。端點以既有 session cookie 驗證管理者角色，並透過 `text/event-stream` 傳送 `started`、`stage-start`、`stage-progress`、`stage-complete` 與 `complete` 事件；基金批次可逐檔回報完成數，行情批次可逐項回報更新數，RSS 與總經則回報階段完成與統計結果。瀏覽器管理面板改用 EventSource 接收事件，連線中斷與伺服器錯誤會顯示可理解的狀態，不再依賴等待 mutation 完成後才更新進度。
+
+基金與行情折線圖共用 `historyRange` 工具，依最新資料日期裁切 `1M`、`3M`、`6M`、`1Y` 四個日曆區間；選擇偏好保存於瀏覽器，資料不足時保留空狀態。新增 SSE EventSource、區間裁切、偏好解析與首頁實際切換測試後，完整 Vitest 為 27 個測試檔、103 個案例通過，TypeScript 檢查通過。桌面與 375px 預覽完成，區間切換器在窄螢幕改為滿寬排列，未觀察到水平溢出；未登入預覽不顯示管理者刷新面板。

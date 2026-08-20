@@ -3,35 +3,33 @@ import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const refreshState = vi.hoisted(() => ({ isPending: false, mutate: vi.fn(), options: null as null | { onSuccess?: (value: unknown) => void; onError?: (error: Error) => void } }));
+class MockEventSource {
+  static latest: MockEventSource | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onerror: (() => void) | null = null;
+  readyState = 1;
+  constructor(public url: string) { MockEventSource.latest = this; }
+  addEventListener() {}
+  close() { this.readyState = 2; }
+  emit(payload: unknown) { this.onmessage?.({ data: JSON.stringify(payload) } as MessageEvent); }
+}
 
-vi.mock("@/lib/trpc", () => ({
-  trpc: {
-    auth: { me: { useQuery: () => ({ data: { role: "admin" }, isLoading: false }) } },
-    dashboard: { manualRefresh: { useMutation: (options: typeof refreshState.options) => { refreshState.options = options; return { isPending: refreshState.isPending, mutate: refreshState.mutate }; } } },
-  },
-}));
+vi.stubGlobal("EventSource", MockEventSource);
+vi.mock("@/lib/trpc", () => ({ trpc: { auth: { me: { useQuery: () => ({ data: { role: "admin" }, isLoading: false }) } } } }));
 
 import { ManualRefreshPanel } from "./ManualRefreshPanel";
 
-afterEach(() => {
-  refreshState.isPending = false;
-  refreshState.mutate.mockReset();
-  refreshState.options = null;
-});
+afterEach(() => { MockEventSource.latest = null; });
 
-describe("ManualRefreshPanel", () => {
-  it("管理者可啟動刷新並查看四階段結果", async () => {
+describe("ManualRefreshPanel SSE", () => {
+  it("接收伺服器階段事件並顯示完成摘要", async () => {
     render(<ManualRefreshPanel onCompleted={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "手動刷新" }));
-    expect(refreshState.mutate).toHaveBeenCalledOnce();
-    expect(screen.getByText("基金")).toBeTruthy();
-    expect(screen.getByText("RSS 新聞")).toBeTruthy();
-    expect(screen.getByText("行情")).toBeTruthy();
-    expect(screen.getByText("總經歷史")).toBeTruthy();
-    refreshState.options?.onSuccess?.({ status: "success", fundsUpdated: 31, newsUpdated: 21, marketUpdated: 20, macroPointsUpdated: 500, errors: [], stages: { funds: { status: "success", updated: 31 }, rss: { status: "success", updated: 21 }, market: { status: "success", updated: 20 }, macro: { status: "success", updated: 500 } } });
-    await waitFor(() => expect(screen.getByText(/基金 31 檔、RSS 21 則、行情 20 項/)).toBeTruthy());
-    expect(screen.getByText(/沒有錯誤/)).toBeTruthy();
+    expect(MockEventSource.latest?.url).toBe("/api/admin/refresh/stream");
+    MockEventSource.latest?.emit({ type: "stage-start", stage: "funds", completed: 0, total: 2 });
+    MockEventSource.latest?.emit({ type: "stage-progress", stage: "funds", completed: 1, total: 2, updated: 1 });
+    await waitFor(() => expect(screen.getByText(/1\/2/)).toBeTruthy());
+    MockEventSource.latest?.emit({ type: "complete", result: { status: "success", fundsUpdated: 2, newsUpdated: 4, marketUpdated: 3, macroPointsUpdated: 10, errors: [], stages: {} } });
+    await waitFor(() => expect(screen.getByText(/基金 2 檔、RSS 4 則、行情 3 項/)).toBeTruthy());
   });
-
 });

@@ -492,11 +492,14 @@ describe("資料新鮮度 UI", () => {
     expect(screen.getByText("境外公布落後")).toBeTruthy();
   });
 
-  it("行情卡片顯示近期價格趨勢折線圖", () => {
+  it("基金與行情折線圖可切換 1M、3M、6M、1Y 區間", () => {
     render(<Home />);
-    expect(document.querySelector('.market-sparkline-wrap[aria-label*="近期價格走勢"]')).toBeTruthy();
-    expect(document.querySelector(".market-sparkline-wrap svg")).toBeTruthy();
-    expect(screen.getByText("近 90 日價格走勢")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "1 個月" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "3 個月" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "3 個月" }));
+    expect(screen.getByText("近3 個月價格走勢")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "國內基金" }));
+    expect(screen.getByText("近3 個月淨值走勢")).toBeTruthy();
   });
 
   it("375px 下新鮮度文字保留在卡片內且主內容不產生水平溢出", () => {

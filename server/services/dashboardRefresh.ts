@@ -322,7 +322,30 @@ export async function refreshMacroHistory(tickers: readonly string[] = ["^GSPC",
   return { pointsUpdated: results.reduce((total, result) => total + result.points, 0), errors: results.flatMap(result => result.error ? [result.error] : []) };
 }
 
-export async function refreshDashboardData() {
+export type RefreshProgressEvent = {
+  type: "started" | "stage-start" | "stage-progress" | "stage-complete" | "complete";
+  stage?: "funds" | "rss" | "market" | "macro";
+  completed?: number;
+  total?: number;
+  updated?: number;
+  result?: RefreshResult;
+};
+
+type RefreshProgressListener = (event: RefreshProgressEvent) => void;
+type RefreshResult = {
+  status: "success" | "partial" | "failed";
+  fundsUpdated: number;
+  newsUpdated: number;
+  marketUpdated: number;
+  macroPointsUpdated: number;
+  newsSourceStatus: RSSSourceStatus[];
+  errors: string[];
+  stages: Record<string, { status: string; updated: number; startedAt?: Date; finishedAt: Date }>;
+};
+
+export async function refreshDashboardData(onProgress?: RefreshProgressListener): Promise<RefreshResult> {
+  const emit = (event: RefreshProgressEvent) => { try { onProgress?.(event); } catch { /* client disconnected */ } };
+  emit({ type: "started" });
   const db = await getDb();
   if (!db) throw new Error("資料庫尚未連線");
   await ensureFundConfiguration();
@@ -331,6 +354,8 @@ export async function refreshDashboardData() {
   const activeFunds = await db.select().from(funds).where(eq(funds.isActive, true)).orderBy(funds.fundType, funds.sortOrder);
   const errors: string[] = [];
   const stageStartedAt = new Date();
+  emit({ type: "stage-start", stage: "funds", completed: 0, total: activeFunds.length });
+  let processedFunds = 0;
   const fundResults = await mapWithConcurrency(activeFunds, 6, async fund => {
     try {
       const [history, distributions] = await Promise.all([fetchFundHistory(fund), fetchFundDistributions(fund)]);
@@ -350,15 +375,21 @@ export async function refreshDashboardData() {
       if (distributions.length > 0) {
         await db.insert(fundDistributions).values(distributions.map(item => ({ fundId: fund.id, recordDate: item.recordDate ? databaseDate(item.recordDate) : null, exDate: databaseDate(item.exDate), payoutDate: item.payoutDate ? databaseDate(item.payoutDate) : null, amount: item.amount.toFixed(6), annualizedYield: item.annualizedYield === null ? null : item.annualizedYield.toFixed(4), currency: item.currency || fund.currency, sourceUrl: item.sourceUrl }))).onDuplicateKeyUpdate({ set: { amount: sql`VALUES(amount)`, annualizedYield: sql`VALUES(annualizedYield)`, payoutDate: sql`VALUES(payoutDate)`, sourcedAt: new Date() } });
       }
+      processedFunds += 1;
+      emit({ type: "stage-progress", stage: "funds", completed: processedFunds, total: activeFunds.length, updated: 1 });
       return true;
     } catch (error) {
+      processedFunds += 1;
+      emit({ type: "stage-progress", stage: "funds", completed: processedFunds, total: activeFunds.length, updated: 0 });
       errors.push(`${fund.name}：${error instanceof Error ? error.message : "更新失敗"}`);
       return false;
     }
   });
   const fundsUpdated = fundResults.filter(Boolean).length;
   const fundStageFinishedAt = new Date();
+  emit({ type: "stage-complete", stage: "funds", completed: activeFunds.length, total: activeFunds.length, updated: fundsUpdated });
 
+  emit({ type: "stage-start", stage: "rss" });
   const fetchedNews = await fetchNews();
   if (fetchedNews.statuses.length > 0) {
     await db.insert(rssSourceHealthHistory).values(fetchedNews.statuses.map(item => ({ refreshRunId: runId, sourceUrl: item.url, source: item.source, status: item.status, acceptedCount: item.acceptedCount, latencyMs: item.latencyMs })));
@@ -370,7 +401,10 @@ export async function refreshDashboardData() {
     });
   }
   const newsStageFinishedAt = new Date();
+  emit({ type: "stage-complete", stage: "rss", updated: fetchedNews.items.length });
+  emit({ type: "stage-start", stage: "market", completed: 0, total: MARKET_CONFIG.length });
   let marketUpdated = 0;
+  let processedMarkets = 0;
   await mapWithConcurrency(MARKET_CONFIG, 8, async config => {
     try {
       const quote = await fetchMarketQuote(config);
@@ -378,15 +412,22 @@ export async function refreshDashboardData() {
         set: { name: quote.name, price: quote.price.toFixed(4), change: quote.change.toFixed(4), percentChange: quote.percentChange.toFixed(4), quoteDate: quote.quoteDate, showAsCard: quote.showAsCard, sortOrder: quote.sortOrder, updatedAt: new Date() },
       });
       marketUpdated += 1;
+      processedMarkets += 1;
+      emit({ type: "stage-progress", stage: "market", completed: processedMarkets, total: MARKET_CONFIG.length, updated: 1 });
     } catch (error) {
+      processedMarkets += 1;
+      emit({ type: "stage-progress", stage: "market", completed: processedMarkets, total: MARKET_CONFIG.length, updated: 0 });
       errors.push(`${config.name} 行情：${error instanceof Error ? error.message : "更新失敗"}`);
     }
   });
   const marketStageFinishedAt = new Date();
+  emit({ type: "stage-complete", stage: "market", completed: MARKET_CONFIG.length, total: MARKET_CONFIG.length, updated: marketUpdated });
 
+  emit({ type: "stage-start", stage: "macro" });
   const historyRefresh = await refreshMacroHistory(["^GSPC", ...MACRO_HISTORY_TICKERS]);
   errors.push(...historyRefresh.errors);
   const macroStageFinishedAt = new Date();
+  emit({ type: "stage-complete", stage: "macro", updated: historyRefresh.pointsUpdated });
 
   const status = errors.length === 0 ? "success" : fundsUpdated > 0 || fetchedNews.items.length > 0 ? "partial" : "failed";
   await db.update(refreshRuns).set({
@@ -397,7 +438,7 @@ export async function refreshDashboardData() {
     details: JSON.stringify({ errors, newsSources: fetchedNews.statuses }).slice(0, 10_000),
   }).where(eq(refreshRuns.id, runId));
 
-  return {
+  const result: RefreshResult = {
     status,
     fundsUpdated,
     newsUpdated: fetchedNews.items.length,
@@ -412,6 +453,8 @@ export async function refreshDashboardData() {
       macro: { status: historyRefresh.errors.length === 0 ? "success" : "partial", updated: historyRefresh.pointsUpdated, finishedAt: macroStageFinishedAt },
     },
   };
+  emit({ type: "complete", result });
+  return result;
 }
 
 const decimal = (value: string | null) => (value === null ? null : Number(value));
