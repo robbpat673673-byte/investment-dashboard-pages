@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
+import { filterNewsHealthSources } from "@/lib/newsHealthTrend";
 
 Object.defineProperty(globalThis, "ResizeObserver", {
   writable: true,
@@ -26,6 +27,7 @@ vi.mock("@/lib/observatoryExport", () => ({
 }));
 
 const newsSummaryState = vi.hoisted(() => ({ mode: "success" as "success" | "error", calls: [] as unknown[] }));
+const newsHealthHistoryState = vi.hoisted(() => { const defaultRows = [{ refreshRunId: 101, source: "CNBC・財經市場", status: "fresh", acceptedCount: 4, latencyMs: 420, recordedAt: "2026-08-15T04:00:00.000Z" }, { refreshRunId: 101, source: "華爾街日報・市場", status: "stale", acceptedCount: 0, latencyMs: 830, recordedAt: "2026-08-15T04:00:01.000Z" }, { refreshRunId: 102, source: "CNBC・財經市場", status: "fresh", acceptedCount: 4, latencyMs: 380, recordedAt: "2026-08-16T04:00:00.000Z" }, { refreshRunId: 102, source: "華爾街日報・市場", status: "error", acceptedCount: 0, latencyMs: 1400, recordedAt: "2026-08-16T04:00:01.000Z" }]; return { rows: defaultRows, defaultRows }; });
 
 const summaryState = vi.hoisted(() => ({
   mode: "success" as "success" | "error",
@@ -67,7 +69,7 @@ vi.mock("@/lib/trpc", () => ({
         }),
       },
       newsSourceHealthHistory: {
-        useQuery: () => ({ data: [{ refreshRunId: 101, source: "CNBC・財經市場", status: "fresh", acceptedCount: 4, latencyMs: 420, recordedAt: "2026-08-15T04:00:00.000Z" }, { refreshRunId: 101, source: "華爾街日報・市場", status: "stale", acceptedCount: 0, latencyMs: 830, recordedAt: "2026-08-15T04:00:01.000Z" }, { refreshRunId: 102, source: "CNBC・財經市場", status: "fresh", acceptedCount: 4, latencyMs: 380, recordedAt: "2026-08-16T04:00:00.000Z" }, { refreshRunId: 102, source: "華爾街日報・市場", status: "error", acceptedCount: 0, latencyMs: 1400, recordedAt: "2026-08-16T04:00:01.000Z" }], isLoading: false })
+        useQuery: () => ({ data: newsHealthHistoryState.rows, isLoading: false })
       },
     },
     observatory: {
@@ -104,6 +106,7 @@ afterEach(() => {
   summaryState.mode = "success";
   newsSummaryState.mode = "success";
   newsSummaryState.calls = [];
+  newsHealthHistoryState.rows = newsHealthHistoryState.defaultRows;
   summaryState.generated = null;
   summaryState.refetch.mockReset();
   window.localStorage.clear();
@@ -431,6 +434,14 @@ describe("新聞來源健康狀態", () => {
     expect(screen.getByText("錯誤")).toBeTruthy();
     expect(screen.getByText("各來源累積抓取成功率")).toBeTruthy();
     expect(screen.getByText("各來源抓取延遲")).toBeTruthy();
+    const sourceSelect = screen.getByRole("combobox", { name: "選擇 RSS 趨勢來源" }) as HTMLSelectElement;
+    expect(sourceSelect.value).toBe("all");
+    expect(sourceSelect.querySelector('option[value="CNBC・財經市場"]')).toBeTruthy();
+    fireEvent.change(sourceSelect, { target: { value: "CNBC・財經市場" } });
+    expect(sourceSelect.value).toBe("CNBC・財經市場");
+    const selectedChartBlocks = Array.from(document.querySelectorAll<HTMLElement>(".news-health-chart-block"));
+    expect(selectedChartBlocks).toHaveLength(2);
+    expect(selectedChartBlocks.every(block => block.dataset.series === "CNBC・財經市場")).toBe(true);
     expect(screen.getByText("接收 4 則")).toBeTruthy();
     expect(screen.getByText(/最近刷新：2026\/08\/16/)).toBeTruthy();
   });
@@ -441,6 +452,7 @@ describe("新聞來源健康狀態", () => {
     fireEvent.click(screen.getByRole("button", { name: "財經即時新聞" }));
     expect(document.querySelectorAll(".news-source-health-card")).toHaveLength(4);
     const trend = screen.getByRole("region", { name: "新聞來源歷史趨勢" });
+    expect(screen.getByRole("combobox", { name: "選擇 RSS 趨勢來源" })).toBeTruthy();
     expect(trend.style.overflowX).toBe("hidden");
     const chartBlocks = Array.from(document.querySelectorAll<HTMLElement>(".news-health-chart-block"));
     expect(chartBlocks).toHaveLength(2);
@@ -448,5 +460,16 @@ describe("新聞來源健康狀態", () => {
     expect(screen.getAllByRole("link", { name: "開啟來源 ↗" })).toHaveLength(4);
     const health = screen.getByRole("region", { name: "新聞來源健康狀態" });
     expect(health.className).toContain("news-source-health");
+  });
+});
+
+
+describe("RSS 趨勢來源篩選空狀態", () => {
+  it("沒有歷史資料時顯示空狀態且不渲染來源選單", () => {
+    newsHealthHistoryState.rows = [];
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "財經即時新聞" }));
+    expect(screen.getByText("尚未累積足夠的來源刷新紀錄，完成下一次每日刷新後會開始顯示趨勢。")).toBeTruthy();
+    expect(screen.queryByRole("combobox", { name: "選擇 RSS 趨勢來源" })).toBeNull();
   });
 });

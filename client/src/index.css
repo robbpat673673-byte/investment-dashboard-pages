@@ -262,3 +262,9 @@ html.dark .observatory-summary-actions .button{color:#07101e}
 .news-health-chart-block strong { display: block; margin-bottom: .35rem; font-size: .86rem; }
 .news-health-chart-block .recharts-responsive-container { min-width: 0; }
 @media (max-width: 430px) { .news-health-trend { padding: .75rem; } .news-health-chart-block { padding: .55rem; } }
+
+.news-health-filter { display: flex; align-items: center; gap: .65rem; margin: .8rem 0; }
+.news-health-filter label { color: var(--muted-foreground); font-size: .82rem; font-weight: 600; }
+.news-health-filter select { min-width: 220px; max-width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: .45rem .65rem; background: var(--background); color: var(--foreground); font: inherit; }
+.news-health-filter select:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+@media (max-width: 430px) { .news-health-filter { align-items: stretch; flex-direction: column; gap: .35rem; } .news-health-filter select { min-width: 0; width: 100%; } }

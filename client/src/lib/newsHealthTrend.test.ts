@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildNewsHealthTrend } from "./newsHealthTrend";
+import { buildNewsHealthTrend, filterNewsHealthSources } from "./newsHealthTrend";
 
 describe("news health trend transformation", () => {
+  it("篩選單一來源時只保留指定系列", () => {
+    expect(filterNewsHealthSources(["A", "B", "C"], "all")).toEqual(["A", "B", "C"]);
+    expect(filterNewsHealthSources(["A", "B", "C"], "B")).toEqual(["B"]);
+    expect(filterNewsHealthSources(["A", "B", "C"], "missing")).toEqual([]);
+  });
   it("以 refreshRunId 對齊來源並計算累積成功率", () => {
     const result = buildNewsHealthTrend([
       { refreshRunId: 1, source: "A", status: "fresh", acceptedCount: 4, latencyMs: 100, recordedAt: "2026-08-15T00:00:00.000Z" },

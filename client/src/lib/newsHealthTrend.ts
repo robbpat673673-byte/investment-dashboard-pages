@@ -9,6 +9,10 @@ export type NewsHealthTrendPoint = {
 
 export type NewsHealthChartRow = Record<string, string | number | null> & { label: string };
 
+export function filterNewsHealthSources(sources: string[], selectedSource: string) {
+  return selectedSource === "all" ? sources : sources.filter(source => source === selectedSource);
+}
+
 export function buildNewsHealthTrend(history: NewsHealthTrendPoint[]) {
   const rows = [...history].sort((left, right) => new Date(left.recordedAt).getTime() - new Date(right.recordedAt).getTime());
   const sources = Array.from(new Set(rows.map(row => row.source)));
