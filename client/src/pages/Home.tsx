@@ -11,6 +11,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { buildNewsHealthTrend, filterNewsHealthSources, type NewsHealthTrendPoint } from "@/lib/newsHealthTrend";
 import { classifyDataFreshness } from "@/lib/dataFreshness";
+import { ManualRefreshPanel } from "@/components/ManualRefreshPanel";
 
 type TabKey = "asia" | "domestic" | "foreign" | "performance" | "news" | "observatory" | "alertHistory" | "newsLibrary";
 
@@ -134,6 +135,7 @@ type MarketItem = {
   quoteDate: string | null;
   quoteStatus: "收盤" | "盤中";
   showAsCard: boolean;
+  history?: Array<{ date: string; value: number }>;
 };
 
 type NewsSourceStatus = {
@@ -175,6 +177,16 @@ function Sparkline({ history, annualReturn }: { history: FundCardData["history"]
       </svg>
     </div>
   );
+}
+
+function MarketSparkline({ history, percentChange }: { history: Array<{ date: string; value: number }>; percentChange: number | null }) {
+  if (history.length < 2) return <div className="market-sparkline-empty">近期價格資料不足</div>;
+  const values = history.map(point => point.value);
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  const range = maximum - minimum || 1;
+  const points = history.map((point, index) => `${((index / (history.length - 1)) * 100).toFixed(2)},${(92 - ((point.value - minimum) / range) * 78).toFixed(2)}`).join(" ");
+  return <div className="market-sparkline-wrap" aria-label={`${formatChartDate(history[0]?.date)} 至 ${formatChartDate(history.at(-1)?.date)} 的近期價格走勢`}><div className="sparkline-head"><span>近 90 日價格走勢</span><span>{formatChartDate(history.at(-1)?.date)}</span></div><svg className={`sparkline ${valueClass(percentChange)}`} viewBox="0 0 100 100" preserveAspectRatio="none" role="img"><polyline points={points} className="sparkline-line" vectorEffect="non-scaling-stroke" /><circle cx="100" cy={points.split(" ").at(-1)?.split(",")[1] ?? "50"} r="2.3" className="sparkline-dot" vectorEffect="non-scaling-stroke" /></svg></div>;
 }
 
 function FundCard({ fund, now, isFavorite = false, onToggleFavorite }: { fund: FundCardData; now: Date; isFavorite?: boolean; onToggleFavorite?: (id: number) => void }) {
@@ -266,7 +278,7 @@ function MarketCards({ market, now, cardOrder, onCardOrderChange }: { market: Ma
         {cards.map(item => {
           const freshness = classifyDataFreshness(item.quoteDate, now, "market");
           return <article className={`idx-card ${draggedTicker === item.ticker ? "dragging" : ""}`} key={item.ticker} draggable onDragStart={() => setDraggedTicker(item.ticker)} onDragOver={event => event.preventDefault()} onDrop={() => reorder(item.ticker)} onDragEnd={() => setDraggedTicker(null)}>
-            <span className="idx-drag-handle" aria-hidden="true">⋮⋮</span><div className="idx-name">{item.name}</div><div className={`idx-val ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</div><div className={`idx-chg ${valueClass(item.percentChange)}`}>{item.change === null ? "--" : `${item.change > 0 ? "+" : ""}${formatNumber(item.change)}`} ({returnText(item.percentChange)})</div><div className="idx-ts">資料截至：{formatQuoteDate(item.quoteDate, now)} · {item.quoteStatus} · <span className={`data-freshness ${freshness.kind}`}>{freshness.label}</span><small>{freshness.detail}</small></div>
+            <span className="idx-drag-handle" aria-hidden="true">⋮⋮</span><div className="idx-name">{item.name}</div><div className={`idx-val ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</div><div className={`idx-chg ${valueClass(item.percentChange)}`}>{item.change === null ? "--" : `${item.change > 0 ? "+" : ""}${formatNumber(item.change)}`} ({returnText(item.percentChange)})</div><MarketSparkline history={item.history ?? []} percentChange={item.percentChange} /><div className="idx-ts">資料截至：{formatQuoteDate(item.quoteDate, now)} · {item.quoteStatus} · <span className={`data-freshness ${freshness.kind}`}>{freshness.label}</span><small>{freshness.detail}</small></div>
           </article>;
         })}
       </div>
@@ -366,6 +378,7 @@ export default function Home() {
       <div className="sb-label">國際基金</div>{sidebarForeign.map(fund => <button className="sb-item" key={fund.id} onClick={() => selectTab("foreign")}><div><div className="sb-code">境外</div><div className="sb-name">{fund.name.replace("基金", "")}</div><div className="sb-ts">{formatDate(fund.asOfDate)}</div></div><div className="sb-price">{formatNumber(fund.nav, 4)}</div></button>)}
     </aside>
     <main className="main">
+      <ManualRefreshPanel onCompleted={() => { void refetch(); }} />
       <nav className="tab-nav" aria-label="投資儀表板頁籤">{tabs.map(tab => <button className={`tab ${activeTab === tab.key ? "active" : ""}`} key={tab.key} onClick={() => selectTab(tab.key)}>{tab.label}</button>)}</nav>
       {isLoading ? <div className="loading-state">正在讀取公開資料庫…</div> : null}
       {activeTab === "asia" && <section className="panel active"><MarketCards market={data?.market ?? []} now={now} cardOrder={marketCardOrder} onCardOrderChange={saveMarketCardOrder} /><div className="sec-title">台股個股 / 全球指數</div><div className="table-wrap"><table className="dtable"><thead><tr><th>代碼</th><th className="left">名稱</th><th>現價</th><th>漲跌</th><th>漲跌幅</th><th>更新時間</th><th>狀態</th></tr></thead><tbody>{(data?.market ?? []).map(item => <tr key={item.ticker}><td><span className="t-code">{item.ticker}</span></td><td className="left"><span className="t-name">{item.name}</span></td><td><span className={`t-price ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</span></td><td><span className={`t-chg ${valueClass(item.percentChange)}`}>{item.change === null ? "--" : `${item.change > 0 ? "+" : ""}${formatNumber(item.change)}`}</span></td><td><span className={`badge badge-${valueClass(item.percentChange)}`}>{returnText(item.percentChange)}</span></td><td className="t-ts"><span className="ts-dot live" />資料截至：{item.quoteDate || "--"} · {item.quoteStatus}</td><td><span className="badge badge-live">{item.quoteStatus}</span></td></tr>)}</tbody></table></div></section>}

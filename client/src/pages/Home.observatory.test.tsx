@@ -52,7 +52,7 @@ vi.mock("@/lib/trpc", () => ({
           data: {
             domesticFunds: [{ id: 7, name: "測試國內基金", code: "TEST007", fundType: "domestic", currency: "TWD", nav: 100, asOfDate: "2026-08-19T00:00:00.000Z", history: [{ date: "2026-08-12", nav: 95 }, { date: "2026-08-19", nav: 100 }], annualRank: 1, annualTotal: 1, perf: { week: 5, month: 8, quarter: 12, halfYear: 20, year: 25, ytd: 18 }, totalReturn: { available: true, reason: "配息於除息日淨值再投入", week: 5.5, month: 8.7, quarter: 12.8, halfYear: 21, year: 26, ytd: 19 } }],
             foreignFunds: [{ id: 8, name: "測試境外基金", code: "TEST008", fundType: "foreign", currency: "USD", nav: 10, asOfDate: "2026-08-18T00:00:00.000Z", history: [{ date: "2026-08-12", nav: 9.5 }, { date: "2026-08-18", nav: 10 }], annualRank: null, annualTotal: 1, perf: { week: 2, month: 3, quarter: 4, halfYear: 5, year: 6, ytd: 5 }, totalReturn: { available: false, reason: "目前公開來源未提供完整配息歷史", week: null, month: null, quarter: null, halfYear: null, year: null, ytd: null } }],
-            market: [{ ticker: "^TWII", name: "加權指數", price: 23100, change: 100, percentChange: 0.43, quoteDate: "2026-08-18", quoteStatus: "收盤", showAsCard: true }],
+            market: [{ ticker: "^TWII", name: "加權指數", price: 23100, change: 100, percentChange: 0.43, quoteDate: "2026-08-18", quoteStatus: "收盤", showAsCard: true, history: [{ date: "2026-08-01", value: 22800 }, { date: "2026-08-18", value: 23100 }] }],
             news: [{ id: 1, title: "華爾街日報市場測試標題", summary: "WSJ 公開摘要測試。", url: "https://example.com/wsj", source: "華爾街日報・市場", publishedAt: "2026-08-16T04:00:00.000Z" }, { id: 2, title: "CNBC 市場測試標題", summary: "CNBC 公開摘要測試。", url: "https://example.com/cnbc", source: "CNBC・財經市場", publishedAt: "2026-08-16T05:00:00.000Z" }, { id: 3, title: "MarketWatch 測試標題", summary: "MarketWatch 公開摘要測試。", url: "https://example.com/mw", source: "MarketWatch・焦點", publishedAt: "2026-08-16T03:00:00.000Z" }],
             lastRefresh: { status: "success", startedAt: "2026-08-16T03:50:00.000Z", finishedAt: "2026-08-16T04:00:00.000Z", fundsUpdated: 4, newsUpdated: 8, newsSourceStatus: [{ url: "https://example.com/cnbc-rss", source: "CNBC・財經市場", status: "fresh", acceptedCount: 4 }, { url: "https://example.com/wsj-rss", source: "華爾街日報・市場", status: "stale", acceptedCount: 0, detail: "沒有項目通過七天新鮮度條件" }, { url: "https://example.com/ft-rss", source: "Financial Times・全球市場", status: "empty", acceptedCount: 0 }, { url: "https://example.com/mw-rss", source: "MarketWatch・焦點", status: "error", acceptedCount: 0, detail: "來源無法連線" }] },
             observatory: {
@@ -490,6 +490,13 @@ describe("資料新鮮度 UI", () => {
     expect(document.querySelector(".fc-ts")?.textContent).toContain("淨值");
     fireEvent.click(screen.getByRole("button", { name: "國際基金" }));
     expect(screen.getByText("境外公布落後")).toBeTruthy();
+  });
+
+  it("行情卡片顯示近期價格趨勢折線圖", () => {
+    render(<Home />);
+    expect(document.querySelector('.market-sparkline-wrap[aria-label*="近期價格走勢"]')).toBeTruthy();
+    expect(document.querySelector(".market-sparkline-wrap svg")).toBeTruthy();
+    expect(screen.getByText("近 90 日價格走勢")).toBeTruthy();
   });
 
   it("375px 下新鮮度文字保留在卡片內且主內容不產生水平溢出", () => {

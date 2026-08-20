@@ -330,6 +330,7 @@ export async function refreshDashboardData() {
   const runId = Number(run[0].insertId);
   const activeFunds = await db.select().from(funds).where(eq(funds.isActive, true)).orderBy(funds.fundType, funds.sortOrder);
   const errors: string[] = [];
+  const stageStartedAt = new Date();
   const fundResults = await mapWithConcurrency(activeFunds, 6, async fund => {
     try {
       const [history, distributions] = await Promise.all([fetchFundHistory(fund), fetchFundDistributions(fund)]);
@@ -356,6 +357,7 @@ export async function refreshDashboardData() {
     }
   });
   const fundsUpdated = fundResults.filter(Boolean).length;
+  const fundStageFinishedAt = new Date();
 
   const fetchedNews = await fetchNews();
   if (fetchedNews.statuses.length > 0) {
@@ -367,20 +369,24 @@ export async function refreshDashboardData() {
       set: { title: item.title, summary: item.summary, url: item.url, source: item.source, publishedAt: item.publishedAt, fetchedAt: new Date() },
     });
   }
-
+  const newsStageFinishedAt = new Date();
+  let marketUpdated = 0;
   await mapWithConcurrency(MARKET_CONFIG, 8, async config => {
     try {
       const quote = await fetchMarketQuote(config);
       await db.insert(marketQuotes).values({ ...quote, price: quote.price.toFixed(4), change: quote.change.toFixed(4), percentChange: quote.percentChange.toFixed(4) }).onDuplicateKeyUpdate({
         set: { name: quote.name, price: quote.price.toFixed(4), change: quote.change.toFixed(4), percentChange: quote.percentChange.toFixed(4), quoteDate: quote.quoteDate, showAsCard: quote.showAsCard, sortOrder: quote.sortOrder, updatedAt: new Date() },
       });
+      marketUpdated += 1;
     } catch (error) {
       errors.push(`${config.name} 行情：${error instanceof Error ? error.message : "更新失敗"}`);
     }
   });
+  const marketStageFinishedAt = new Date();
 
   const historyRefresh = await refreshMacroHistory(["^GSPC", ...MACRO_HISTORY_TICKERS]);
   errors.push(...historyRefresh.errors);
+  const macroStageFinishedAt = new Date();
 
   const status = errors.length === 0 ? "success" : fundsUpdated > 0 || fetchedNews.items.length > 0 ? "partial" : "failed";
   await db.update(refreshRuns).set({
@@ -391,7 +397,21 @@ export async function refreshDashboardData() {
     details: JSON.stringify({ errors, newsSources: fetchedNews.statuses }).slice(0, 10_000),
   }).where(eq(refreshRuns.id, runId));
 
-  return { status, fundsUpdated, newsUpdated: fetchedNews.items.length, newsSourceStatus: fetchedNews.statuses, errors };
+  return {
+    status,
+    fundsUpdated,
+    newsUpdated: fetchedNews.items.length,
+    marketUpdated,
+    macroPointsUpdated: historyRefresh.pointsUpdated,
+    newsSourceStatus: fetchedNews.statuses,
+    errors,
+    stages: {
+      funds: { status: fundsUpdated > 0 ? "success" : "failed", updated: fundsUpdated, startedAt: stageStartedAt, finishedAt: fundStageFinishedAt },
+      rss: { status: fetchedNews.statuses.some(item => item.status === "fresh") ? "success" : "partial", updated: fetchedNews.items.length, finishedAt: newsStageFinishedAt },
+      market: { status: marketUpdated > 0 ? "success" : "failed", updated: marketUpdated, finishedAt: marketStageFinishedAt },
+      macro: { status: historyRefresh.errors.length === 0 ? "success" : "partial", updated: historyRefresh.pointsUpdated, finishedAt: macroStageFinishedAt },
+    },
+  };
 }
 
 const decimal = (value: string | null) => (value === null ? null : Number(value));
@@ -483,7 +503,16 @@ export async function getPublicDashboardData() {
   if (latestRun?.details) {
     try { latestRunDetails = JSON.parse(latestRun.details) as { newsSources?: RSSSourceStatus[] }; } catch { latestRunDetails = {}; }
   }
-  const macroRows = await db.select({ ticker: marketHistory.ticker, pointDate: marketHistory.pointDate, close: marketHistory.close }).from(marketHistory).where(or(...MACRO_HISTORY_TICKERS.map(ticker => eq(marketHistory.ticker, ticker)))).orderBy(marketHistory.pointDate);
+  const chartRows = await db.select({ ticker: marketHistory.ticker, pointDate: marketHistory.pointDate, close: marketHistory.close }).from(marketHistory).orderBy(marketHistory.ticker, marketHistory.pointDate);
+  const recentMarketHistory = new Map<string, Array<{ date: string; value: number }>>();
+  for (const row of chartRows) {
+    const date = row.pointDate instanceof Date ? row.pointDate.toISOString().slice(0, 10) : String(row.pointDate).slice(0, 10);
+    const points = recentMarketHistory.get(row.ticker) ?? [];
+    points.push({ date, value: Number(row.close) });
+    recentMarketHistory.set(row.ticker, points);
+  }
+  recentMarketHistory.forEach((points, ticker) => recentMarketHistory.set(ticker, points.slice(-90)));
+  const macroRows = chartRows.filter(row => MACRO_HISTORY_TICKERS.includes(row.ticker as typeof MACRO_HISTORY_TICKERS[number]));
   const latestSummary = (await db.select({ summaryDate: observatoryDailySummaries.summaryDate, generatedAt: observatoryDailySummaries.generatedAt, content: observatoryDailySummaries.content }).from(observatoryDailySummaries).orderBy(desc(observatoryDailySummaries.summaryDate)).limit(1))[0] ?? null;
 
   const publicMarket = quotes.map(quote => ({
@@ -495,6 +524,7 @@ export async function getPublicDashboardData() {
     quoteDate: quote.quoteDate,
     quoteStatus: "收盤" as const,
     showAsCard: quote.showAsCard,
+    history: recentMarketHistory.get(quote.ticker) ?? [],
   }));
   const publicNews = news.map(item => ({ ...item, id: Number(item.id) }));
   const publicMacroHistory = macroRows.map(row => ({ ticker: row.ticker, date: row.pointDate instanceof Date ? row.pointDate.toISOString().slice(0, 10) : String(row.pointDate).slice(0, 10), close: Number(row.close) }));

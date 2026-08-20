@@ -1,10 +1,10 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { adminProcedure, publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { getPublicDashboardData, getPublicFundDetail, getRSSHealthHistory } from "./services/dashboardRefresh";
+import { getPublicDashboardData, getPublicFundDetail, getRSSHealthHistory, refreshDashboardData } from "./services/dashboardRefresh";
 import { invokeLLM } from "./_core/llm";
 import { dailySummarySystemPrompt, getDailySummaryByDate, listDailySummaries, observatorySystemPrompt, saveDailySummary } from "./services/observatory";
 
@@ -47,6 +47,7 @@ export const appRouter = router({
 
   dashboard: router({
     get: publicProcedure.query(async () => getPublicDashboardData()),
+    manualRefresh: adminProcedure.mutation(async () => refreshDashboardData()),
     newsSourceHealthHistory: publicProcedure.input(z.object({ limit: z.number().int().min(1).max(90).default(14) }).optional()).query(async ({ input }) => getRSSHealthHistory(input?.limit ?? 14)),
   }),
 
