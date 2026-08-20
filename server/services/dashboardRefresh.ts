@@ -109,14 +109,20 @@ export function isFreshNewsDate(value: Date | null, now = new Date(), maxAgeMs =
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const databaseDate = (isoDate: string) => new Date(`${isoDate}T00:00:00.000Z`);
 
-export async function mapWithConcurrency<T, R>(items: readonly T[], limit: number, worker: (item: T, index: number) => Promise<R>) {
+export function throwIfRefreshCancelled(signal?: AbortSignal) {
+  if (signal?.aborted) throw new DOMException("Refresh cancelled", "AbortError");
+}
+
+export async function mapWithConcurrency<T, R>(items: readonly T[], limit: number, worker: (item: T, index: number) => Promise<R>, signal?: AbortSignal) {
   const results = new Array<R>(items.length);
   let nextIndex = 0;
   const runWorker = async () => {
     while (true) {
+      throwIfRefreshCancelled(signal);
       const index = nextIndex++;
       if (index >= items.length) return;
       results[index] = await worker(items[index], index);
+      throwIfRefreshCancelled(signal);
     }
   };
   await Promise.all(Array.from({ length: Math.min(Math.max(1, limit), Math.max(1, items.length)) }, () => runWorker()));
@@ -305,11 +311,12 @@ async function fetchMarketQuote(config: (typeof MARKET_CONFIG)[number]) {
   throw lastError instanceof Error ? lastError : new Error("行情更新失敗");
 }
 
-export async function refreshMacroHistory(tickers: readonly string[] = ["^GSPC", ...MACRO_HISTORY_TICKERS]) {
+export async function refreshMacroHistory(tickers: readonly string[] = ["^GSPC", ...MACRO_HISTORY_TICKERS], signal?: AbortSignal) {
   const db = await getDb();
   if (!db) throw new Error("資料庫尚未連線");
   const results = await mapWithConcurrency(tickers, 4, async ticker => {
     try {
+      throwIfRefreshCancelled(signal);
       const series = await fetchMarketHistory(ticker);
       for (let index = 0; index < series.length; index += 250) {
         await db.insert(marketHistory).values(series.slice(index, index + 250).map(point => ({ ticker, pointDate: databaseDate(point.date), close: point.nav.toFixed(6), source: "Yahoo Finance" }))).onDuplicateKeyUpdate({ set: { close: sql`VALUES(close)`, sourcedAt: new Date() } });
@@ -318,7 +325,7 @@ export async function refreshMacroHistory(tickers: readonly string[] = ["^GSPC",
     } catch (error) {
       return { points: 0, error: `${ticker} 歷史：${error instanceof Error ? error.message : "更新失敗"}` };
     }
-  });
+  }, signal);
   return { pointsUpdated: results.reduce((total, result) => total + result.points, 0), errors: results.flatMap(result => result.error ? [result.error] : []) };
 }
 
@@ -343,12 +350,14 @@ type RefreshResult = {
   stages: Record<string, { status: string; updated: number; startedAt?: Date; finishedAt: Date }>;
 };
 
-export async function refreshDashboardData(onProgress?: RefreshProgressListener): Promise<RefreshResult> {
+export async function refreshDashboardData(onProgress?: RefreshProgressListener, signal?: AbortSignal): Promise<RefreshResult> {
   const emit = (event: RefreshProgressEvent) => { try { onProgress?.(event); } catch { /* client disconnected */ } };
+  throwIfRefreshCancelled(signal);
   emit({ type: "started" });
   const db = await getDb();
   if (!db) throw new Error("資料庫尚未連線");
   await ensureFundConfiguration();
+  throwIfRefreshCancelled(signal);
   const run = await db.insert(refreshRuns).values({ status: "running" });
   const runId = Number(run[0].insertId);
   const activeFunds = await db.select().from(funds).where(eq(funds.isActive, true)).orderBy(funds.fundType, funds.sortOrder);
@@ -358,6 +367,7 @@ export async function refreshDashboardData(onProgress?: RefreshProgressListener)
   let processedFunds = 0;
   const fundResults = await mapWithConcurrency(activeFunds, 6, async fund => {
     try {
+      throwIfRefreshCancelled(signal);
       const [history, distributions] = await Promise.all([fetchFundHistory(fund), fetchFundDistributions(fund)]);
       if (history.length < 2) throw new Error("歷史淨值筆數不足");
       const latest = history.at(-1)!;
@@ -384,11 +394,12 @@ export async function refreshDashboardData(onProgress?: RefreshProgressListener)
       errors.push(`${fund.name}：${error instanceof Error ? error.message : "更新失敗"}`);
       return false;
     }
-  });
+  }, signal);
   const fundsUpdated = fundResults.filter(Boolean).length;
   const fundStageFinishedAt = new Date();
   emit({ type: "stage-complete", stage: "funds", completed: activeFunds.length, total: activeFunds.length, updated: fundsUpdated });
 
+  throwIfRefreshCancelled(signal);
   emit({ type: "stage-start", stage: "rss" });
   const fetchedNews = await fetchNews();
   if (fetchedNews.statuses.length > 0) {
@@ -402,11 +413,13 @@ export async function refreshDashboardData(onProgress?: RefreshProgressListener)
   }
   const newsStageFinishedAt = new Date();
   emit({ type: "stage-complete", stage: "rss", updated: fetchedNews.items.length });
+  throwIfRefreshCancelled(signal);
   emit({ type: "stage-start", stage: "market", completed: 0, total: MARKET_CONFIG.length });
   let marketUpdated = 0;
   let processedMarkets = 0;
   await mapWithConcurrency(MARKET_CONFIG, 8, async config => {
     try {
+      throwIfRefreshCancelled(signal);
       const quote = await fetchMarketQuote(config);
       await db.insert(marketQuotes).values({ ...quote, price: quote.price.toFixed(4), change: quote.change.toFixed(4), percentChange: quote.percentChange.toFixed(4) }).onDuplicateKeyUpdate({
         set: { name: quote.name, price: quote.price.toFixed(4), change: quote.change.toFixed(4), percentChange: quote.percentChange.toFixed(4), quoteDate: quote.quoteDate, showAsCard: quote.showAsCard, sortOrder: quote.sortOrder, updatedAt: new Date() },
@@ -419,12 +432,13 @@ export async function refreshDashboardData(onProgress?: RefreshProgressListener)
       emit({ type: "stage-progress", stage: "market", completed: processedMarkets, total: MARKET_CONFIG.length, updated: 0 });
       errors.push(`${config.name} 行情：${error instanceof Error ? error.message : "更新失敗"}`);
     }
-  });
+  }, signal);
   const marketStageFinishedAt = new Date();
   emit({ type: "stage-complete", stage: "market", completed: MARKET_CONFIG.length, total: MARKET_CONFIG.length, updated: marketUpdated });
 
+  throwIfRefreshCancelled(signal);
   emit({ type: "stage-start", stage: "macro" });
-  const historyRefresh = await refreshMacroHistory(["^GSPC", ...MACRO_HISTORY_TICKERS]);
+  const historyRefresh = await refreshMacroHistory(["^GSPC", ...MACRO_HISTORY_TICKERS], signal);
   errors.push(...historyRefresh.errors);
   const macroStageFinishedAt = new Date();
   emit({ type: "stage-complete", stage: "macro", updated: historyRefresh.pointsUpdated });

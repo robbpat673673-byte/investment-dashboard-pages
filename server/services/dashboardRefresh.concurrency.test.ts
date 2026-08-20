@@ -16,4 +16,10 @@ describe("mapWithConcurrency", () => {
   it("returns an empty result without starting workers", async () => {
     await expect(mapWithConcurrency([], 4, async value => value)).resolves.toEqual([]);
   });
+
+  it("stops workers when the refresh signal is aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(mapWithConcurrency([1, 2], 2, async value => value, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+  });
 });

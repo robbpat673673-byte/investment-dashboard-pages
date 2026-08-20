@@ -13,6 +13,9 @@ import { appSettings } from "../../drizzle/schema";
 import { getDb } from "../db";
 import { refreshDashboardData } from "../services/dashboardRefresh";
 import { eq } from "drizzle-orm";
+import crypto from "node:crypto";
+
+const activeAdminRefreshes = new Map<string, AbortController>();
 
 function sendSseError(res: express.Response, closed: boolean, message: string) {
   if (!closed && !res.writableEnded) res.write(`event: error\ndata: ${JSON.stringify({ error: message })}\n\n`);
@@ -47,22 +50,41 @@ async function startServer() {
   registerOAuthRoutes(app);
   app.get("/api/admin/refresh/stream", async (req, res) => {
     let closed = false;
-    req.on("close", () => { closed = true; });
+    const requestId = typeof req.query.requestId === "string" ? req.query.requestId : crypto.randomUUID();
+    const controller = new AbortController();
+    activeAdminRefreshes.set(requestId, controller);
+    req.on("close", () => { closed = true; controller.abort(); });
     try {
       const user = await sdk.authenticateRequest(req);
       if (user.role !== "admin") return res.status(403).json({ error: "admin-only" });
       res.status(200).set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" });
       res.flushHeaders();
       const send = (event: unknown) => { if (!closed && !res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`); };
-      await refreshDashboardData(send);
+      send({ type: "started", requestId });
+      await refreshDashboardData(send, controller.signal);
     } catch (error) {
       const message = error instanceof Error ? error.message : "unknown-error";
       if (!res.headersSent) return res.status(500).json({ error: message });
       sendSseError(res, closed, message);
     } finally {
+      activeAdminRefreshes.delete(requestId);
       if (!res.writableEnded) res.end();
     }
     return undefined;
+  });
+  app.post("/api/admin/refresh/cancel", async (req, res) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      if (user.role !== "admin") return res.status(403).json({ error: "admin-only" });
+      const requestId = typeof req.body?.requestId === "string" ? req.body.requestId : "";
+      const controller = activeAdminRefreshes.get(requestId);
+      if (!controller) return res.status(404).json({ ok: false, error: "refresh-not-found" });
+      controller.abort();
+      return res.json({ ok: true, status: "cancelling", requestId });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown-error";
+      return res.status(500).json({ ok: false, error: message });
+    }
   });
   app.post("/api/scheduled/daily-refresh", async (req, res) => {
     try {

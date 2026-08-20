@@ -263,3 +263,10 @@ RSS 抓取現在對每個來源採獨立四則配額，並只接受發布時間�
 本輪將管理者手動刷新改為 `/api/admin/refresh/stream` SSE 端點。端點以既有 session cookie 驗證管理者角色，並透過 `text/event-stream` 傳送 `started`、`stage-start`、`stage-progress`、`stage-complete` 與 `complete` 事件；基金批次可逐檔回報完成數，行情批次可逐項回報更新數，RSS 與總經則回報階段完成與統計結果。瀏覽器管理面板改用 EventSource 接收事件，連線中斷與伺服器錯誤會顯示可理解的狀態，不再依賴等待 mutation 完成後才更新進度。
 
 基金與行情折線圖共用 `historyRange` 工具，依最新資料日期裁切 `1M`、`3M`、`6M`、`1Y` 四個日曆區間；選擇偏好保存於瀏覽器，資料不足時保留空狀態。新增 SSE EventSource、區間裁切、偏好解析與首頁實際切換測試後，完整 Vitest 為 27 個測試檔、103 個案例通過，TypeScript 檢查通過。桌面與 375px 預覽完成，區間切換器在窄螢幕改為滿寬排列，未觀察到水平溢出；未登入預覽不顯示管理者刷新面板。
+
+
+## 2026-08-20 手動刷新取消操作
+
+本輪在 SSE 手動刷新流程加入管理者限定的 `/api/admin/refresh/cancel` 端點。每次 SSE 刷新以 requestId 登記至伺服器端的 AbortController；前端進度條旁顯示「取消」按鈕，按下後送出 requestId、立即顯示「刷新已取消」，關閉 EventSource，並由伺服器在基金、行情與總經的並行 worker 及階段邊界檢查 AbortSignal，避免啟動後續工作。伺服器亦會在連線關閉時釋放對應的刷新工作。
+
+本輪新增取消按鈕、requestId URL、取消端點、AbortSignal 並行 worker 測試與 SSE UI 測試。完整 Vitest 為 27 個測試檔、105 個案例通過，TypeScript 檢查通過；375px 預覽確認未登入時管理者控制項隱藏且主內容無水平溢出。
