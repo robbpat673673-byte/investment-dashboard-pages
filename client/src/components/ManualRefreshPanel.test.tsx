@@ -26,7 +26,7 @@ describe("ManualRefreshPanel SSE", () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
     render(<ManualRefreshPanel onCompleted={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "手動刷新" }));
+    fireEvent.click(screen.getByRole("button", { name: "立即執行一次" }));
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/admin/refresh/cancel", expect.objectContaining({ method: "POST" })));
     expect(screen.getByText("刷新已取消")).toBeTruthy();
@@ -37,8 +37,9 @@ describe("ManualRefreshPanel SSE", () => {
 
   it("接收伺服器階段事件並顯示完成摘要", async () => {
     render(<ManualRefreshPanel onCompleted={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "手動刷新" }));
+    fireEvent.click(screen.getByRole("button", { name: "立即執行一次" }));
     expect(MockEventSource.latest?.url).toMatch(/^\/api\/admin\/refresh\/stream\?requestId=/);
+    expect(screen.getByRole("button", { name: "刷新執行中…" })).toHaveProperty("disabled", true);
     MockEventSource.latest?.emit({ type: "stage-start", stage: "funds", completed: 0, total: 2 });
     MockEventSource.latest?.emit({ type: "stage-progress", stage: "funds", completed: 1, total: 2, updated: 1 });
     await waitFor(() => expect(screen.getByText(/1\/2/)).toBeTruthy());

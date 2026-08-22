@@ -479,17 +479,17 @@ describe("資料新鮮度 UI", () => {
   it("市場與基金卡片顯示資料截至日及狀態，頁首另顯示刷新完成狀態", () => {
     render(<Home />);
     expect(screen.getByText(/每日自動更新：/)).toBeTruthy();
-    expect(screen.getByText("資料延遲")).toBeTruthy();
-    expect(screen.getByText("前一交易日")).toBeTruthy();
+    expect(screen.getAllByText("資料延遲").length).toBeGreaterThan(0);
     expect(document.querySelector(".idx-ts")?.textContent).toContain("資料截至");
     expect(document.querySelector(".idx-ts")?.textContent).toContain("收盤");
     expect(document.body.textContent).toContain("2026-08-18");
 
     fireEvent.click(screen.getByRole("button", { name: "國內基金" }));
+    expect(document.querySelector(".fc-ts")?.textContent).toContain("資料延遲");
     expect(document.querySelector(".fc-ts")?.textContent).toContain("08/19");
     expect(document.querySelector(".fc-ts")?.textContent).toContain("淨值");
     fireEvent.click(screen.getByRole("button", { name: "國際基金" }));
-    expect(screen.getByText("境外公布落後")).toBeTruthy();
+    expect(document.querySelector(".fc-ts")?.textContent).toContain("資料延遲");
   });
 
   it("基金與行情折線圖可切換 1M、3M、6M、1Y 區間", () => {
