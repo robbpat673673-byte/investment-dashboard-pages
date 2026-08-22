@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { filterHistoryRange, isStaticDashboard, sortStaticFunds, staticDashboardUrl, type HistoryRange, type StaticDashboard, type StaticPoint } from "./staticDashboard";
+import { applyStaticTheme, readStaticTheme, STATIC_THEME_KEY, type StaticTheme } from "./staticPreferences";
 
 const periods = [["week", "近 1 週"], ["month", "近 1 月"], ["quarter", "近 3 月"], ["halfYear", "近半年"], ["year", "近 1 年"]] as const;
 const safeStoredList = (key: string) => { try { const value = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; } catch { return []; } };
@@ -17,13 +18,24 @@ function Sparkline({ points, positive }: { points: StaticPoint[]; positive?: boo
 const formatPct = (value: number | null | undefined) => value === null || value === undefined ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 const formatDate = (value: string | null) => value ? new Date(value).toLocaleString("zh-TW", { dateStyle: "medium", timeStyle: "short", hour12: false }) : "尚未更新";
 
+function DashboardSkeleton() {
+  return <section className="skeleton-region" aria-busy="true" aria-live="polite" aria-label="正在載入公開投資資料">
+    <div className="skeleton-intro"><span className="skeleton-line title" /><span className="skeleton-line text" /></div>
+    <div className="skeleton-grid markets">{Array.from({ length: 8 }, (_, index) => <article className="skeleton-card" key={`market-${index}`}><span className="skeleton-line label" /><span className="skeleton-line value" /><span className="skeleton-chart" /></article>)}</div>
+    <div className="skeleton-intro funds"><span className="skeleton-line title" /><span className="skeleton-line text" /></div>
+    <div className="skeleton-grid fund-cards">{Array.from({ length: 6 }, (_, index) => <article className="skeleton-card" key={`fund-${index}`}><span className="skeleton-line label" /><span className="skeleton-line value" /><span className="skeleton-chart" /><span className="skeleton-line return-line" /></article>)}</div>
+    <p className="loading-copy">正在取得公開市場、基金與 RSS 資料…</p>
+  </section>;
+}
+
 export default function App() {
   const [dashboard, setDashboard] = useState<StaticDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [fundType, setFundType] = useState<"domestic" | "foreign">("domestic");
   const [query, setQuery] = useState("");
   const [range, setRange] = useState<HistoryRange>(() => (localStorage.getItem("static-dashboard:range") as HistoryRange) || "1y");
-  const [theme, setTheme] = useState(() => localStorage.getItem("static-dashboard:theme") || "light");
+  const [theme, setTheme] = useState<StaticTheme>(() => readStaticTheme(localStorage));
   const [sort, setSort] = useState<"name" | "year" | "month">("year");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [favorites, setFavorites] = useState<string[]>(() => safeStoredList("static-dashboard:favorites"));
@@ -36,10 +48,11 @@ export default function App() {
     fetch(staticDashboardUrl(), { cache: "no-store" })
       .then(response => response.ok ? response.json() as Promise<unknown> : Promise.reject(new Error(`資料讀取失敗（${response.status}）`)))
       .then(payload => { if (!isStaticDashboard(payload)) throw new Error("靜態資料格式不完整"); setDashboard(payload); })
-      .catch(fetchError => setError(fetchError instanceof Error ? fetchError.message : "無法讀取靜態資料"));
+      .catch(fetchError => setError(fetchError instanceof Error ? fetchError.message : "無法讀取靜態資料"))
+      .finally(() => setIsLoading(false));
   }, []);
 
-  useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("static-dashboard:theme", theme); }, [theme]);
+  useEffect(() => { applyStaticTheme(theme, document.documentElement); localStorage.setItem(STATIC_THEME_KEY, theme); }, [theme]);
   useEffect(() => { localStorage.setItem("static-dashboard:range", range); }, [range]);
   useEffect(() => { localStorage.setItem("static-dashboard:favorites", JSON.stringify(favorites)); }, [favorites]);
   useEffect(() => { localStorage.setItem("static-dashboard:saved-news", JSON.stringify(savedNews)); }, [savedNews]);
@@ -52,11 +65,11 @@ export default function App() {
   return <main className="shell">
     <header className="hero">
       <div><p className="eyebrow">PUBLIC STATIC EDITION</p><h1>投資儀表板</h1><p>全球市場、基金淨值與財經 RSS，一天更新一次。</p></div>
-      <div className="hero-tools"><button className="theme-toggle" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>{theme === "dark" ? "淺色模式" : "深色模式"}</button><div className="update-chip"><strong>資料更新</strong><span>{formatDate(dashboard?.generatedAt ?? null)}</span></div></div>
+      <div className="hero-tools"><button className="theme-toggle" aria-label={`切換為${theme === "dark" ? "淺色" : "深色"}模式`} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}><span className="theme-symbol" aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span><span>{theme === "dark" ? "淺色模式" : "深色模式"}</span></button><div className="update-chip"><strong>資料更新</strong><span>{formatDate(dashboard?.generatedAt ?? null)}</span></div></div>
     </header>
     <section className="static-note" aria-label="靜態版限制"><strong>靜態公開版</strong><span>資料由 GitHub Actions 每日台北時間 08:00 產生。此版本不提供登入、手動刷新、即時進度、資料庫寫入、AI 摘要；自選、新聞收藏與稍後閱讀僅保存在此瀏覽器。</span></section>
     {error ? <section className="error">{error}。請稍後重新整理，或在 GitHub Actions 手動執行「更新並發布靜態資料」。</section> : null}
-    {!dashboard && !error ? <section className="loading">正在讀取公開資料…</section> : null}
+    {isLoading ? <DashboardSkeleton /> : null}
     {dashboard ? <>
       {dashboard.errors.length ? <section className="warning"><strong>部分來源本次未更新：</strong>{dashboard.errors.slice(0, 4).join("；")}</section> : null}
       <section className="section"><div className="section-heading"><div><p className="eyebrow">MARKETS</p><h2>全球市場</h2></div><div className="range-controls">{(["1m", "3m", "6m", "1y"] as HistoryRange[]).map(item => <button key={item} className={range === item ? "active" : ""} onClick={() => setRange(item)}>{item.toUpperCase()}</button>)}</div></div><div className="market-grid">{dashboard.markets.slice(0, 8).map(market => <article className="market-card" key={market.ticker}><div className="card-head"><span>{market.name}</span><small>{market.quoteDate}</small></div><strong>{market.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}</strong><div className={`change ${market.percentChange >= 0 ? "positive" : "negative"}`}>{formatPct(market.percentChange)} <span>{market.change.toFixed(2)}</span></div><Sparkline points={filterHistoryRange(market.history, range)} positive={market.percentChange >= 0} /></article>)}</div></section>
@@ -65,4 +78,3 @@ export default function App() {
     </> : null}
   </main>;
 }
-

@@ -3,12 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="公開財經市場、基金與 RSS 新聞靜態儀表板" />
+    <meta name="description" content="公開財經市場、基金淨值、五期報酬與 RSS 新聞的每日更新投資儀表板。" />
+    <meta name="theme-color" content="#173b35" />
+    <link rel="icon" type="image/png" href="https://invdash-zg9qxwf5.manus.space/manus-storage/investment-dashboard-favicon_df9c36fa.png" />
+    <link rel="apple-touch-icon" href="https://invdash-zg9qxwf5.manus.space/manus-storage/investment-dashboard-favicon_df9c36fa.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="zh_TW" />
+    <meta property="og:site_name" content="投資儀表板" />
+    <meta property="og:title" content="投資儀表板｜每日更新的市場、基金與財經新聞" />
+    <meta property="og:description" content="追蹤全球市場、基金淨值、五期報酬與財經 RSS；資料由 GitHub Actions 每日更新。" />
+    <meta property="og:url" content="https://robbpat673673-byte.github.io/investment-dashboard-pages/" />
+    <meta property="og:image" content="https://invdash-zg9qxwf5.manus.space/manus-storage/investment-dashboard-social-preview_5d8b5064.jpg" />
+    <meta property="og:image:alt" content="晨曦中的手繪財經景觀與上升市場曲線" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="投資儀表板｜每日更新的市場、基金與財經新聞" />
+    <meta name="twitter:description" content="全球市場、基金淨值、五期報酬與財經 RSS 的公開靜態儀表板。" />
+    <meta name="twitter:image" content="https://invdash-zg9qxwf5.manus.space/manus-storage/investment-dashboard-social-preview_5d8b5064.jpg" />
     <title>投資儀表板｜靜態公開版</title>
+    <script>
+      try {
+        if (localStorage.getItem("static-dashboard:theme") === "dark") {
+          document.documentElement.dataset.theme = "dark";
+        }
+      } catch (_) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
