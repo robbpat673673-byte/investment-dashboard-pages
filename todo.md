@@ -399,3 +399,9 @@
 - [x] 以 Netlify Identity 取代 Manus OAuth，定義管理者權限與前端登入遷移方式
 - [x] 將 tRPC／Express API 逐步對應為 Netlify Functions 路由
 - [x] 將 SSE 手動刷新與每日 08:00 更新改以 Netlify 串流／背景與排程 Functions 實作
+
+## 本輪指引：外部 MySQL 與 Netlify 設定
+
+- [x] 撰寫外部 MySQL 建立、使用者權限、資料表匯入與連線字串取得指南
+- [x] 撰寫 Netlify 環境變數、Identity 管理者與手動發布設定指南
+- [x] 交付使用者操作清單並說明完成後的部署驗證步驟
