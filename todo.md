@@ -448,11 +448,11 @@
 
 ## 本輪發布：GitHub Pages 公開靜態版
 
-- [ ] 確認 GitHub 連線與 `dashboard` 公開 repository 的可用性
-- [ ] 將不含機密的 GitHub Pages 靜態版推送至 `dashboard` 預設分支
-- [ ] 啟用 GitHub Pages 的 GitHub Actions 發布來源
-- [ ] 手動執行首次資料更新與 Pages 部署工作流程
-- [ ] 驗證公開 Pages 網址、JSON 資料載入與部署狀態
-- [ ] 交付公開網址與自訂網域設定下一步
-- [ ] 修正 GitHub Actions 中 pnpm 版本重複指定造成的首次部署失敗
-- [ ] 同步修正後工作流程並重新執行首次 Pages 部署
+- [x] 確認 GitHub 連線與 `investment-dashboard-pages` 公開 repository 的可用性
+- [x] 將不含機密的 GitHub Pages 靜態版推送至 `investment-dashboard-pages` 預設分支
+- [x] 啟用 GitHub Pages 的 GitHub Actions 發布來源
+- [x] 手動執行首次資料更新與 Pages 部署工作流程
+- [x] 驗證公開 Pages 網址、JSON 資料載入與部署狀態
+- [x] 交付公開網址與自訂網域設定下一步
+- [x] 修正 GitHub Actions 中 pnpm 版本重複指定造成的首次部署失敗
+- [x] 同步修正後工作流程並重新執行首次 Pages 部署
