@@ -2,6 +2,14 @@ import { OAUTH_STATE_COOKIE, encodeOAuthState } from "@shared/const";
 
 export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
+type NetlifyIdentityWidget = {
+  open: (tab?: "login" | "signup") => void;
+};
+
+function getNetlifyIdentityWidget(): NetlifyIdentityWidget | null {
+  return (window as Window & { netlifyIdentity?: NetlifyIdentityWidget }).netlifyIdentity ?? null;
+}
+
 // Start the Manus OAuth login. Call this from an event handler or effect at the
 // moment you want to navigate, e.g. `onClick={() => startLogin()}`.
 //
@@ -13,6 +21,15 @@ export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 // with "invalid oauth state". It returns void by design, so there is no URL to
 // stash across renders.
 export const startLogin = () => {
+  if (import.meta.env.VITE_RUNTIME_TARGET === "netlify") {
+    const widget = getNetlifyIdentityWidget();
+    if (widget) {
+      widget.open("login");
+      return;
+    }
+    window.alert("Netlify Identity 尚未載入，請重新整理後再登入。");
+    return;
+  }
   const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
   const appId = import.meta.env.VITE_APP_ID;
   const redirectUri = `${window.location.origin}/api/oauth/callback`;

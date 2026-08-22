@@ -367,3 +367,35 @@
 - [x] 補上權限、重複觸發、成功與錯誤狀態測試
 - [x] 完成桌面與 375px 驗證並更新 observatory_verification.md
 - [x] 保存並發布本輪正式 checkpoint
+
+## 本輪修正：Netlify 404 部署診斷
+
+- [x] 檢查 resilient-kheer-beb4f9.netlify.app 的 HTTP 回應與根目錄部署狀態
+- [x] 判定 ZIP 部署內容、建置輸出或單頁路由設定造成的 404 根因
+- [x] 準備相容的 Netlify 部署成品或設定修正並驗證根網址可開啟
+- [x] 向使用者交付最短可行的 Netlify 重新部署步驟
+
+## 本輪遷移：Netlify Functions 與外部服務
+
+- [x] 盤點現有 Express、tRPC、Manus OAuth、資料庫、SSE、S3、LLM 與 Heartbeat 依賴
+- [x] 選定 Netlify 相容的 API 路由、外部資料庫、身份驗證、檔案儲存與排程方案
+- [x] 建立 netlify.toml、前端 publish 設定、SPA 路由重導與 Functions 骨架
+- [x] 建立環境變數範本與遷移文件，列出使用者需提供的 Netlify／外部服務憑證
+- [ ] 取得必要憑證並接入外部資料庫、身份驗證、新聞／行情刷新與排程
+- [ ] 於 Netlify 驗證根網址、API、登入、SSE、資料刷新與每日排程
+- [ ] 保存遷移版本與交付部署操作指引
+
+## 本輪調整：Netlify 手動上傳套件
+
+- [x] 建立可手動上傳的 Netlify 專案結構與 netlify.toml
+- [x] 建立前端 SPA 重導、API Functions 與排程 Functions 骨架
+- [x] 建立外部資料庫、身份驗證、LLM、儲存與排程的環境變數範本
+- [x] 撰寫 Netlify 後台手動部署與外部服務設定指南
+- [x] 產生不含機密的 Netlify 遷移 ZIP 套件並驗證結構
+
+## 遷移決策：外部 MySQL 與 Netlify Identity
+
+- [x] 保留 MySQL／Drizzle 資料模型，建立 Netlify Functions 可用的資料庫連線層
+- [x] 以 Netlify Identity 取代 Manus OAuth，定義管理者權限與前端登入遷移方式
+- [x] 將 tRPC／Express API 逐步對應為 Netlify Functions 路由
+- [x] 將 SSE 手動刷新與每日 08:00 更新改以 Netlify 串流／背景與排程 Functions 實作

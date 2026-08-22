@@ -8,6 +8,16 @@ type UseAuthOptions = {
   redirectPath?: string;
 };
 
+type NetlifyIdentityWidget = {
+  on?: (event: "login" | "logout", listener: () => void) => void;
+  off?: (event: "login" | "logout", listener: () => void) => void;
+};
+
+function getNetlifyIdentityWidget(): NetlifyIdentityWidget | null {
+  if (typeof window === "undefined") return null;
+  return (window as Window & { netlifyIdentity?: NetlifyIdentityWidget }).netlifyIdentity ?? null;
+}
+
 export function useAuth(options?: UseAuthOptions) {
   // Login is started via startLogin() in the effect below, only when we actually
   // navigate — never during render. startLogin() mints a one-time nonce + writes
@@ -49,6 +59,19 @@ export function useAuth(options?: UseAuthOptions) {
       await utils.auth.me.invalidate();
     }
   }, [logoutMutation, utils]);
+
+  useEffect(() => {
+    if (import.meta.env.VITE_RUNTIME_TARGET !== "netlify") return;
+    const widget = getNetlifyIdentityWidget();
+    if (!widget?.on) return;
+    const refresh = () => { void meQuery.refetch(); };
+    widget.on("login", refresh);
+    widget.on("logout", refresh);
+    return () => {
+      widget.off?.("login", refresh);
+      widget.off?.("logout", refresh);
+    };
+  }, [meQuery]);
 
   const state = useMemo(() => {
     localStorage.setItem(
