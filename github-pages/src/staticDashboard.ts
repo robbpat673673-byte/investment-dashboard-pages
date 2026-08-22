@@ -2,7 +2,8 @@ export type StaticPoint = { date: string; value: number };
 export type StaticMarket = { ticker: string; name: string; price: number; change: number; percentChange: number; quoteDate: string; history: StaticPoint[] };
 export type StaticFund = { id: string; type: "domestic" | "foreign"; name: string; code: string | null; currency: string; asOfDate: string; nav: number; returns: Record<string, number | null>; history: StaticPoint[] };
 export type StaticNews = { title: string; summary: string; url: string; source: string; publishedAt: string };
-export type StaticDashboard = { generatedAt: string | null; markets: StaticMarket[]; funds: StaticFund[]; news: StaticNews[]; sourceHealth: Array<{ source: string; status: string; acceptedCount: number }>; errors: string[] };
+export type StaticSourceHealth = { source: string; status: string; acceptedCount: number; latencyMs?: number; detail?: string };
+export type StaticDashboard = { generatedAt: string | null; markets: StaticMarket[]; funds: StaticFund[]; news: StaticNews[]; sourceHealth: StaticSourceHealth[]; errors: string[] };
 
 export function staticDashboardUrl(basePath = import.meta.env.BASE_URL) {
   return `${basePath.endsWith("/") ? basePath : `${basePath}/`}data/dashboard.json`;

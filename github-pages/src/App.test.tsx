@@ -13,6 +13,12 @@ const dashboardPayload = {
   errors: [],
 };
 
+const degradedDashboardPayload = {
+  ...dashboardPayload,
+  sourceHealth: [{ source: "CNBC・財經市場", status: "error", acceptedCount: 0, latencyMs: 842, detail: "來源回應逾時" }],
+  errors: ["道瓊指數：行情來源暫時無法回應"],
+};
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -45,5 +51,18 @@ describe("靜態公開儀表板載入體驗", () => {
     expect(localStorage.getItem("static-dashboard:theme")).toBe("dark");
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(screen.getByRole("button", { name: "切換為淺色模式" })).not.toBeNull();
+  });
+
+  it("在資料來源異常時顯示可展開的真實診斷原因", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => degradedDashboardPayload } as Response)));
+    render(<App />);
+
+    const details = await screen.findByText("資料來源診斷");
+    expect(details).not.toBeNull();
+    fireEvent.click(details);
+
+    expect(screen.getByText("來源回應逾時")).not.toBeNull();
+    expect(screen.getAllByText("道瓊指數：行情來源暫時無法回應").length).toBeGreaterThan(0);
+    expect(screen.getByText("延遲 842 ms")).not.toBeNull();
   });
 });
