@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseThemePreference, restoreThemePreference, toggleThemePreference } from "./themePreference";
+import { applyThemePreference, parseThemePreference, restoreThemePreference, toggleThemePreference } from "./themePreference";
 
 describe("themePreference", () => {
   it("只接受已知的深色偏好值", () => {
@@ -33,6 +33,17 @@ describe("themePreference", () => {
     expect(restoreThemePreference()).toBe("dark");
 
     Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+    Object.defineProperty(globalThis, "document", { configurable: true, value: originalDocument });
+  });
+
+  it("切換回淺色時會移除 html 的 dark 類別", () => {
+    const originalDocument = globalThis.document;
+    const toggle = (className: string, active: boolean) => {
+      expect(className).toBe("dark");
+      expect(active).toBe(false);
+    };
+    Object.defineProperty(globalThis, "document", { configurable: true, value: { documentElement: { classList: { toggle } } } });
+    applyThemePreference("light");
     Object.defineProperty(globalThis, "document", { configurable: true, value: originalDocument });
   });
 });
