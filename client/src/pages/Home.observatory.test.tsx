@@ -117,6 +117,13 @@ afterEach(() => {
 });
 
 describe("Home 觀測站", () => {
+  it("市場卡片在歷史資料充足時顯示走勢圖", () => {
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: "全球市場" }));
+    expect(screen.getByText("近1 年價格走勢")).toBeTruthy();
+    expect(screen.queryByText("近期價格資料不足")).toBeNull();
+  });
+
   it("多來源新聞頁顯示快速掌握並支援來源篩選", () => {
     render(<Home />);
     fireEvent.click(screen.getByRole("button", { name: "財經即時新聞" }));

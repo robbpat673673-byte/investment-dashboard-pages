@@ -86,6 +86,8 @@ const MARKET_CONFIG = [
   { ticker: "^TYX", name: "美國 30 年期公債殖利率", showAsCard: false, sortOrder: 20 },
 ];
 
+export const MARKET_CARD_HISTORY_TICKERS = MARKET_CONFIG.filter(item => item.showAsCard).map(item => item.ticker);
+
 export const RSS_SOURCES = [
   ["https://feeds.a.dj.com/rss/RSSMarketsMain.xml", "華爾街日報・市場"],
   ["https://www.cnbc.com/id/100003114/device/rss/rss.html", "CNBC・財經市場"],
@@ -311,7 +313,7 @@ async function fetchMarketQuote(config: (typeof MARKET_CONFIG)[number]) {
   throw lastError instanceof Error ? lastError : new Error("行情更新失敗");
 }
 
-export async function refreshMacroHistory(tickers: readonly string[] = ["^GSPC", ...MACRO_HISTORY_TICKERS], signal?: AbortSignal) {
+export async function refreshMacroHistory(tickers: readonly string[] = [...MARKET_CARD_HISTORY_TICKERS, ...MACRO_HISTORY_TICKERS], signal?: AbortSignal) {
   const db = await getDb();
   if (!db) throw new Error("資料庫尚未連線");
   const results = await mapWithConcurrency(tickers, 4, async ticker => {
@@ -438,7 +440,7 @@ export async function refreshDashboardData(onProgress?: RefreshProgressListener,
 
   throwIfRefreshCancelled(signal);
   emit({ type: "stage-start", stage: "macro" });
-  const historyRefresh = await refreshMacroHistory(["^GSPC", ...MACRO_HISTORY_TICKERS], signal);
+  const historyRefresh = await refreshMacroHistory([...MARKET_CARD_HISTORY_TICKERS, ...MACRO_HISTORY_TICKERS], signal);
   errors.push(...historyRefresh.errors);
   const macroStageFinishedAt = new Date();
   emit({ type: "stage-complete", stage: "macro", updated: historyRefresh.pointsUpdated });
