@@ -8,9 +8,11 @@ import App from "./App";
 import { startLogin } from "./const";
 import "./index.css";
 import { restoreThemePreference } from "./lib/themePreference";
+import { restoreSeasonTheme } from "./lib/seasonTheme";
 
 // 在首次 React render 前同步深色偏好，避免重新載入出現淺色閃爍或狀態不一致。
 restoreThemePreference();
+restoreSeasonTheme();
 const queryClient = new QueryClient();
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {

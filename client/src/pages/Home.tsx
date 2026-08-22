@@ -3,6 +3,7 @@ import { filterFunds, type FundScope } from "@/lib/fundFilters";
 import { moveMarketCard, orderMarketCards } from "@/lib/marketCardOrder";
 import { FAVORITE_FUNDS_STORAGE_KEY, createFavoriteExport, parseFavoriteFundIds, parseFavoriteImport, sortFundsByReturn, toggleFavoriteFundId, type FundSortKey } from "@/lib/fundPreferences";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { SeasonThemePicker } from "@/components/SeasonThemePicker";
 import { NEWS_PREFERENCES_KEY, filterNewsByPreference, parseNewsPreferences, serializeNewsPreferences, toggleNewsPreference, type NewsPreferenceState } from "@/lib/newsPreferences";
 import { ObservatoryPanel } from "@/components/ObservatoryPanel";
 import { ObservatoryAlertHistory } from "@/components/ObservatoryAlertHistory";
@@ -153,6 +154,10 @@ type NewsHealthHistoryPoint = NewsHealthTrendPoint;
 const sourceStatusLabel: Record<NewsSourceStatus["status"], string> = { fresh: "新鮮", stale: "過舊", empty: "無內容", error: "錯誤" };
 
 const commodityTickers = new Set(["GC=F", "CL=F", "BZ=F", "HG=F", "NG=F"]);
+const fundIllustrations = {
+  domestic: "/manus-storage/fund-domestic-illustration_ffa2b27f.png",
+  foreign: "/manus-storage/fund-global-illustration_6f0ddcef.png",
+} as const;
 
 function HistoryRangeSwitcher({ value, onChange }: { value: HistoryRange; onChange: (value: HistoryRange) => void }) {
   return <div className="history-range-switcher" aria-label="選擇折線圖時間區間">{historyRanges.map(range => <button type="button" className={value === range ? "active" : ""} key={range} onClick={() => onChange(range)}>{historyRangeLabels[range]}</button>)}</div>;
@@ -200,7 +205,7 @@ function FundCard({ fund, now, range, isFavorite = false, onToggleFavorite }: { 
   const rankWidth = fund.annualRank && fund.annualTotal > 1 ? Math.max(8, ((fund.annualTotal - fund.annualRank) / (fund.annualTotal - 1)) * 100) : 50;
   return (
     <article className="fund-card">
-      <div className="fund-card-head"><div><div className="fc-code">{fund.code || `境外 · ${fund.currency}`}</div><div className="fc-name">{fund.name}</div></div>{onToggleFavorite ? <button type="button" className={`favorite-toggle ${isFavorite ? "active" : ""}`} aria-pressed={isFavorite} onClick={() => onToggleFavorite(fund.id)}>{isFavorite ? "★ 已追蹤" : "☆ 加入自選"}</button> : null}</div>
+      <div className="fund-card-head"><div><div className="fc-code">{fund.code || `境外 · ${fund.currency}`}</div><div className="fc-name">{fund.name}</div></div><div className="fund-card-actions"><span className={`fund-illustration ${fund.fundType}`} aria-label={fund.fundType === "domestic" ? "國內基金晨光茶園插畫" : "國際基金月光羅盤插畫"} role="img"><img src={fundIllustrations[fund.fundType]} alt="" /></span>{onToggleFavorite ? <button type="button" className={`favorite-toggle ${isFavorite ? "active" : ""}`} aria-pressed={isFavorite} onClick={() => onToggleFavorite(fund.id)}>{isFavorite ? "★ 已追蹤" : "☆ 加入自選"}</button> : null}</div></div>
       <div className="fc-price">{fund.currency === "TWD" ? "" : `${fund.currency} `}{formatNumber(fund.nav, fund.currency === "TWD" ? 2 : 4)}</div>
       <Sparkline history={sliceHistoryByRange(fund.history, range)} annualReturn={annualReturn} range={range} />
       <div className="fc-return-groups" aria-label={`${fund.name} 純淨值與含息總報酬`}>
@@ -380,7 +385,7 @@ export default function Home() {
   const newsSourceStatuses = (data?.lastRefresh?.newsSourceStatus ?? []) as NewsSourceStatus[];
 
   return <div className="shell">
-    <header className="topbar"><div className="brand"><span className="brand-dot" />投資儀表板<span className="public-label">PUBLIC</span></div><div className="topbar-right"><span id="last-update">{dashboardStatus}：{formatDateTime(data?.lastRefresh?.finishedAt)} · <strong className={`data-freshness ${refreshFreshness.kind}`}>{refreshFreshness.label}</strong></span><span id="globalTime">{now.toLocaleTimeString("zh-TW", { hour12: false })}</span><ThemeToggle /><button className="refresh-btn" onClick={() => refetch()} disabled={isFetching}>{isFetching ? "更新中" : "↻ 更新"}</button></div></header>
+    <header className="topbar"><div className="brand"><span className="brand-dot" />投資儀表板<span className="public-label">PUBLIC</span></div><div className="topbar-right"><span id="last-update">{dashboardStatus}：{formatDateTime(data?.lastRefresh?.finishedAt)} · <strong className={`data-freshness ${refreshFreshness.kind}`}>{refreshFreshness.label}</strong></span><span id="globalTime">{now.toLocaleTimeString("zh-TW", { hour12: false })}</span><SeasonThemePicker /><ThemeToggle /><button className="refresh-btn" onClick={() => refetch()} disabled={isFetching}>{isFetching ? "更新中" : "↻ 更新"}</button></div></header>
     <aside className="sidebar" aria-label="市場摘要">
       <div className="sb-label">原物料</div>{sidebarCommodities.map(item => <button className="sb-item" key={item.ticker} onClick={() => selectTab("asia")}><div><div className="sb-code">{item.ticker}</div><div className="sb-name">{item.name}</div><div className="sb-ts">{item.quoteDate || "--"}</div></div><div><div className={`sb-price ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</div><div className={`sb-chg ${valueClass(item.percentChange)}`}>{returnText(item.percentChange)}</div></div></button>)}
       <div className="sb-label">台股個股</div>{sidebarStocks.map(item => <button className="sb-item" key={item.ticker} onClick={() => selectTab("asia")}><div><div className="sb-code">{item.ticker}</div><div className="sb-name">{item.name}</div><div className="sb-ts">{item.quoteDate || "--"}</div></div><div><div className={`sb-price ${valueClass(item.percentChange)}`}>{formatNumber(item.price)}</div><div className={`sb-chg ${valueClass(item.percentChange)}`}>{returnText(item.percentChange)}</div></div></button>)}
