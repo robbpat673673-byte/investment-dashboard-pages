@@ -270,3 +270,8 @@ RSS 抓取現在對每個來源採獨立四則配額，並只接受發布時間�
 本輪在 SSE 手動刷新流程加入管理者限定的 `/api/admin/refresh/cancel` 端點。每次 SSE 刷新以 requestId 登記至伺服器端的 AbortController；前端進度條旁顯示「取消」按鈕，按下後送出 requestId、立即顯示「刷新已取消」，關閉 EventSource，並由伺服器在基金、行情與總經的並行 worker 及階段邊界檢查 AbortSignal，避免啟動後續工作。伺服器亦會在連線關閉時釋放對應的刷新工作。
 
 本輪新增取消按鈕、requestId URL、取消端點、AbortSignal 並行 worker 測試與 SSE UI 測試。完整 Vitest 為 27 個測試檔、105 個案例通過，TypeScript 檢查通過；375px 預覽確認未登入時管理者控制項隱藏且主內容無水平溢出。
+
+
+## 2026-08-22 每日自動更新時間調整
+
+既有 Heartbeat 任務 `investment-dashboard-daily-refresh`（task UID `LqNMZRUgrbHSoXsnD6wtAY`）已保留原 `/api/scheduled/daily-refresh` 端點並調整為每日台北時間 08:00 執行。平台 cron 使用 UTC 六欄格式 `0 0 0 * * *`；任務目前啟用，查核後下一次執行時間為 `2026-08-23T00:00:00Z`，即台北時間 2026/08/23 08:00。原先記錄的 2026/08/21 08:00 已經過去，因此排程更新後不會補發一次性歷史執行，仍依每日週期執行。

@@ -348,3 +348,11 @@
 - [x] 補上取消成功、重複取消、權限與錯誤狀態測試
 - [x] 完成桌面與 375px 響應式驗證並更新 observatory_verification.md
 - [x] 保存並發布本輪正式 checkpoint
+
+
+## 本輪變更：每日自動更新時間
+
+- [x] 確認目前每日刷新排程的時區、cron 表達式、任務 UID 與啟用狀態
+- [x] 將每日自動更新調整為 2026/08/21 08:00 起每日執行
+- [x] 核對排程更新後的下一次執行時間與任務狀態
+- [x] 更新 observatory_verification.md 並保存正式 checkpoint
