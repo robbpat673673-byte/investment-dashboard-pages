@@ -219,7 +219,7 @@ async function fetchFundDistributions(fund: { mcode: string; fundType: "domestic
 }
 
 async function fetchMarketHistory(ticker: string): Promise<NavPoint[]> {
-  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=2y&interval=1d&events=history`;
+  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=5y&interval=1d&events=history`;
   const payload = JSON.parse(await fetchText(url)) as { chart?: { result?: Array<{ timestamp?: number[]; indicators?: { quote?: Array<{ close?: Array<number | null> }> } }> } };
   const chart = payload.chart?.result?.[0];
   const closes = chart?.indicators?.quote?.[0]?.close ?? [];
@@ -557,7 +557,7 @@ export async function getPublicDashboardData() {
   };
   const quotes = await db.select().from(marketQuotes).orderBy(marketQuotes.sortOrder);
   const news = await db.select().from(newsItems).orderBy(desc(newsItems.publishedAt), desc(newsItems.fetchedAt)).limit(12);
-  const latestRun = (await db.select().from(refreshRuns).orderBy(desc(refreshRuns.startedAt)).limit(1))[0] ?? null;
+  const latestRun = (await db.select().from(refreshRuns).where(or(eq(refreshRuns.status, "success"), eq(refreshRuns.status, "partial"), eq(refreshRuns.status, "failed"))).orderBy(desc(refreshRuns.startedAt)).limit(1))[0] ?? null;
   let latestRunDetails: { newsSources?: RSSSourceStatus[] } = {};
   if (latestRun?.details) {
     try { latestRunDetails = JSON.parse(latestRun.details) as { newsSources?: RSSSourceStatus[] }; } catch { latestRunDetails = {}; }
@@ -570,7 +570,7 @@ export async function getPublicDashboardData() {
     points.push({ date, value: Number(row.close) });
     recentMarketHistory.set(row.ticker, points);
   }
-  recentMarketHistory.forEach((points, ticker) => recentMarketHistory.set(ticker, points.slice(-90)));
+  recentMarketHistory.forEach((points, ticker) => recentMarketHistory.set(ticker, points.slice(-1_300)));
   const macroRows = chartRows.filter(row => MACRO_HISTORY_TICKERS.includes(row.ticker as typeof MACRO_HISTORY_TICKERS[number]));
   const latestSummary = (await db.select({ summaryDate: observatoryDailySummaries.summaryDate, generatedAt: observatoryDailySummaries.generatedAt, content: observatoryDailySummaries.content }).from(observatoryDailySummaries).orderBy(desc(observatoryDailySummaries.summaryDate)).limit(1))[0] ?? null;
 

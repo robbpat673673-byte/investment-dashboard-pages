@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseHistoryRange, sliceHistoryByRange } from "./historyRange";
+import { parseHistoryRange, parseMarketHistoryRange, sliceHistoryByRange, sliceMarketHistoryByRange } from "./historyRange";
 
 describe("historyRange", () => {
   const history = [
@@ -22,5 +22,12 @@ describe("historyRange", () => {
     expect(parseHistoryRange("3M")).toBe("3M");
     expect(parseHistoryRange("invalid")).toBe("1Y");
     expect(parseHistoryRange(null)).toBe("1Y");
+  });
+
+  it("市場卡片支援五年區間，且不改變基金區間契約", () => {
+    expect(parseMarketHistoryRange("5Y")).toBe("5Y");
+    expect(parseHistoryRange("5Y")).toBe("1Y");
+    const longHistory = [{ date: "2021-08-20" }, { date: "2022-08-22" }, { date: "2025-08-21" }, { date: "2026-08-21" }];
+    expect(sliceMarketHistoryByRange(longHistory, "5Y").map(point => point.date)).toEqual(["2021-08-20", "2022-08-22", "2025-08-21", "2026-08-21"]);
   });
 });

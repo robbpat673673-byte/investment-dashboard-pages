@@ -304,3 +304,16 @@ html.dark.season-winter body { background:radial-gradient(circle at 10% 2%,rgba(
 .fund-card-actions { display:flex; align-items:center; gap:6px; flex:0 0 auto; }.fund-illustration { display:grid; width:39px; height:39px; place-items:center; overflow:hidden; border:1px solid rgba(80,120,92,.16); border-radius:55% 45% 50% 44%; background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.85),rgba(236,228,203,.60)); box-shadow:0 2px 7px rgba(87,71,45,.10); }.fund-illustration.foreign { background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.84),rgba(216,231,223,.62)); }.fund-illustration img { display:block; width:92%; height:92%; object-fit:contain; filter:saturate(.85) contrast(1.04); }.dark .fund-illustration { border-color:rgba(213,173,98,.22); background:radial-gradient(circle at 35% 28%,rgba(84,101,76,.90),rgba(37,49,37,.86)); }.dark .fund-illustration.foreign { background:radial-gradient(circle at 35% 28%,rgba(69,91,87,.90),rgba(34,46,45,.86)); }
 @media (prefers-reduced-motion:reduce) { .theme-sun-icon,.theme-moon-icon { transition:none; } }
 @media (max-width:700px) { #globalTime { display:none; }.topbar-right { gap:4px; }.season-picker { width:57px; padding:0 6px; }.season-picker-label { display:none; }.season-picker select { width:39px; }.theme-toggle { min-width:61px; padding:5px 8px; }.fund-illustration { width:36px; height:36px; }.fund-card-actions { gap:5px; } }
+
+/* 市場時區、交易狀態與放大走勢 */
+.market-sparkline-wrap.interactive { display:block; width:100%; border:0; background:transparent; color:inherit; text-align:left; cursor:zoom-in; }
+.market-sparkline-wrap.interactive:hover .sparkline-line { stroke-width:2.8; }
+.market-sparkline-wrap.interactive:focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:5px; }
+.market-sparkline-wrap.expanded { margin-top:0; padding:12px 0 2px; }
+.market-sparkline-wrap.expanded .sparkline { height:330px; margin-top:12px; }
+.market-session { display:grid; grid-template-columns:auto 1fr; gap:2px 5px; margin-top:7px; padding-top:6px; border-top:1px dashed var(--border); color:var(--text3); font-family:var(--mono); font-size:8px; line-height:1.35; }
+.market-session strong { color:var(--flat); font-size:9px; }.market-session.open strong { color:var(--up); }.market-session.preopen strong,.market-session.break strong { color:var(--warn); }.market-session.closed strong { color:var(--text2); }.market-session span { justify-self:end; }.market-session small,.market-session em { grid-column:1/-1; font-size:8px; font-style:normal; }.market-session em { opacity:.78; }
+.market-chart-dialog { max-width:min(900px,calc(100% - 2rem))!important; }.market-chart-dialog [data-slot="dialog-description"] { font-family:var(--mono); font-size:10px; }
+@media (max-width:600px) { .market-sparkline-wrap.expanded .sparkline { height:230px; }.market-session { font-size:8px; } }
+
+.data-freshness.weekend-close,.data-freshness.weekend-nav { color:var(--warn); }

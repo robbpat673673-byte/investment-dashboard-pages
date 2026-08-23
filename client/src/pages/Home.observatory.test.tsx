@@ -499,14 +499,25 @@ describe("資料新鮮度 UI", () => {
     expect(document.querySelector(".fc-ts")?.textContent).toContain("資料延遲");
   });
 
-  it("基金與行情折線圖可切換 1M、3M、6M、1Y 區間", () => {
+  it("市場與基金折線圖各自維持合適的區間選項", () => {
     render(<Home />);
     expect(screen.getAllByRole("button", { name: "1 個月" })).toHaveLength(1);
-    expect(screen.getAllByRole("button", { name: "3 個月" })).toHaveLength(1);
-    fireEvent.click(screen.getByRole("button", { name: "3 個月" }));
-    expect(screen.getByText("近3 個月價格走勢")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "半年" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "5 年" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "5 年" }));
+    expect(screen.getByText("近5 年價格走勢")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "國內基金" }));
+    fireEvent.click(screen.getByRole("button", { name: "3 個月" }));
     expect(screen.getByText("近3 個月淨值走勢")).toBeTruthy();
+  });
+
+  it("市場卡片顯示本地時區並可點擊放大走勢圖", () => {
+    render(<Home />);
+    expect(screen.getByText(/台北時間 CST/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /放大.*價格走勢/ }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toBeTruthy();
+    expect(dialog.textContent).toContain("加權指數");
   });
 
   it("375px 下新鮮度文字保留在卡片內且主內容不產生水平溢出", () => {

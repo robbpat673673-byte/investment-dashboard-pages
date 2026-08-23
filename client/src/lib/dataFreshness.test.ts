@@ -18,6 +18,12 @@ describe("classifyDataFreshness", () => {
     expect(classifyDataFreshness("2026-08-18", now, "foreign-fund").kind).toBe("foreign-lag");
   });
 
+  it("週末會清楚區分最近交易日收盤與基金淨值待公布", () => {
+    const sunday = new Date("2026-08-23T00:10:00+08:00");
+    expect(classifyDataFreshness("2026-08-21", sunday, "market")).toMatchObject({ kind: "weekend-close", label: "週末前收盤" });
+    expect(classifyDataFreshness("2026-08-21", sunday, "domestic-fund")).toMatchObject({ kind: "weekend-nav", label: "週末待淨值公布" });
+  });
+
   it("handles short market dates and missing dates", () => {
     expect(classifyDataFreshness("08/18", now, "market").kind).toBe("previous-trading-day");
     expect(classifyDataFreshness(null, now, "market").kind).toBe("missing");

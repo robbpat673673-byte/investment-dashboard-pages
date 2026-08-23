@@ -1,4 +1,4 @@
-export type DataFreshnessKind = "latest" | "previous-trading-day" | "delayed" | "foreign-lag" | "missing";
+export type DataFreshnessKind = "latest" | "previous-trading-day" | "weekend-close" | "weekend-nav" | "delayed" | "foreign-lag" | "missing";
 
 export type DataFreshness = {
   kind: DataFreshnessKind;
@@ -28,6 +28,9 @@ export function classifyDataFreshness(asOf: Date | string | null | undefined, no
   if (!parsed) return { kind: "missing", label: "無資料日期", detail: "來源尚未提供可辨識的資料截至日" };
   const age = dayAge(parsed, now);
   if (age === 0) return { kind: "latest", label: "今日資料", detail: "資料截至今日" };
+  const isWeekend = [0, 6].includes(now.getUTCDay());
+  if (isWeekend && (type === "market" || type === "macro") && age <= 3) return { kind: "weekend-close", label: "週末前收盤", detail: `週末沒有常規交易；資料截至最近交易日 ${age} 天前` };
+  if (isWeekend && type === "domestic-fund" && age <= 3) return { kind: "weekend-nav", label: "週末待淨值公布", detail: `基金淨值通常於交易日後公布；資料截至最近淨值日 ${age} 天前` };
   if (type === "foreign-fund" && age <= 3) return { kind: "foreign-lag", label: "境外公布落後", detail: `資料截至 ${age} 天前；境外基金淨值通常依海外公布日更新` };
   if (age === 1 || (type === "market" || type === "macro") && age <= 2) return { kind: "previous-trading-day", label: "前一交易日", detail: `資料截至 ${age} 天前，可能是最近一個已完成交易日` };
   return { kind: "delayed", label: "資料延遲", detail: `資料截至 ${age} 天前，已超過預期更新時間` };
