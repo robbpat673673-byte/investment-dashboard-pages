@@ -105,4 +105,20 @@ describe("靜態公開儀表板載入體驗", () => {
     expect(clickSpy).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:dashboard");
   });
+
+  it("會顯示本機基金警示，並可建立自選群組", async () => {
+    localStorage.setItem("static-dashboard:fund-alerts", JSON.stringify([{ id: "alert-1", fundId: "fund-1", direction: "atOrAbove", threshold: 10, enabled: true, createdAt: "2026-08-23T00:00:00.000Z" }]));
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => interactiveDashboardPayload } as Response)));
+    render(<App />);
+
+    expect(await screen.findByRole("alert")).not.toBeNull();
+    expect(screen.getByText(/目前有 1 項本機門檻已觸發/)).not.toBeNull();
+    fireEvent.change(screen.getByRole("textbox", { name: "新群組名稱" }), { target: { value: "長期配置" } });
+    fireEvent.click(screen.getByRole("button", { name: "建立群組" }));
+
+    expect(await screen.findByText("長期配置 · 0 檔")).not.toBeNull();
+    expect(screen.getByRole("option", { name: "長期配置（0）" })).not.toBeNull();
+    fireEvent.click(screen.getAllByRole("checkbox", { name: "長期配置" })[0]);
+    expect(await screen.findByRole("option", { name: "長期配置（1）" })).not.toBeNull();
+  });
 });
