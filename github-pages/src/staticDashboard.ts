@@ -30,3 +30,26 @@ export function sortStaticFunds(funds: StaticFund[], key: "name" | "year" | "mon
     ? left.name.localeCompare(right.name, "zh-Hant")
     : (right.returns[key] ?? Number.NEGATIVE_INFINITY) - (left.returns[key] ?? Number.NEGATIVE_INFINITY));
 }
+
+function escapeCsvCell(value: string | number | null | undefined) {
+  const text = value === null || value === undefined ? "" : typeof value === "string" && /^[=+\-@]/.test(value) ? `'${value}` : String(value);
+  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function toCsv(rows: Array<Array<string | number | null | undefined>>) {
+  return `\uFEFF${rows.map(row => row.map(escapeCsvCell).join(",")).join("\r\n")}\r\n`;
+}
+
+export function createFundsCsv(funds: StaticFund[]) {
+  return toCsv([
+    ["基金類型", "基金名稱", "代碼", "幣別", "最新淨值", "資料截至日", "近 1 週 (%)", "近 1 月 (%)", "近 3 月 (%)", "近半年 (%)", "近 1 年 (%)"],
+    ...funds.map(fund => [fund.type === "domestic" ? "國內基金" : "國際基金", fund.name, fund.code, fund.currency, fund.nav, fund.asOfDate, fund.returns.week, fund.returns.month, fund.returns.quarter, fund.returns.halfYear, fund.returns.year]),
+  ]);
+}
+
+export function createMarketsCsv(markets: StaticMarket[]) {
+  return toCsv([
+    ["市場名稱", "代碼", "最新價格", "漲跌", "漲跌幅 (%)", "資料截至日"],
+    ...markets.map(market => [market.name, market.ticker, market.price, market.change, market.percentChange, market.quoteDate]),
+  ]);
+}

@@ -19,9 +19,16 @@ const degradedDashboardPayload = {
   errors: ["道瓊指數：行情來源暫時無法回應"],
 };
 
+const interactiveDashboardPayload = {
+  ...dashboardPayload,
+  markets: [{ ticker: "^GSPC", name: "標普 500", price: 6450.1, change: 12.3, percentChange: 0.19, quoteDate: "2026-08-21", history: [{ date: "2026-08-20", value: 6437.8 }, { date: "2026-08-21", value: 6450.1 }] }],
+  funds: [{ id: "fund-1", type: "domestic" as const, name: "示範基金", code: "DEMO", currency: "TWD", asOfDate: "2026-08-21", nav: 10.25, returns: { week: 1, month: 2, quarter: 3, halfYear: 4, year: 5 }, history: [{ date: "2026-08-20", value: 10.1 }, { date: "2026-08-21", value: 10.25 }] }],
+};
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   localStorage.clear();
   delete document.documentElement.dataset.theme;
 });
@@ -64,5 +71,38 @@ describe("靜態公開儀表板載入體驗", () => {
     expect(screen.getByText("來源回應逾時")).not.toBeNull();
     expect(screen.getAllByText("道瓊指數：行情來源暫時無法回應").length).toBeGreaterThan(0);
     expect(screen.getByText("延遲 842 ms")).not.toBeNull();
+  });
+
+  it("可重新讀取已發布快照，並顯示管理者立即更新指引", async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => interactiveDashboardPayload } as Response));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "重新讀取最新資料" })).not.toBeNull();
+    expect(screen.getByText("管理者立即更新資料")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "重新讀取最新資料" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/已重新讀取最新已發布資料/)).not.toBeNull();
+  });
+
+  it("可用鍵盤查看圖表精確日期與數值，並下載目前篩選的 CSV", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => interactiveDashboardPayload } as Response)));
+    const createObjectURL = vi.fn(() => "blob:dashboard");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    render(<App />);
+
+    const chart = await screen.findByRole("img", { name: /標普 500 價格走勢圖/ });
+    fireEvent.focus(chart);
+    fireEvent.keyDown(chart, { key: "ArrowLeft" });
+    expect(await screen.findByText("2026-08-20")).not.toBeNull();
+    expect(screen.getByText("價格 6,437.8")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "匯出市場 CSV" }));
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:dashboard");
   });
 });
